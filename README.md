@@ -1,8 +1,30 @@
-# 🚗 IoT Accident Alert System - Telemetry Dashboard
+# 🚗 CRASHGUARD IoT - Accident Alert & Telemetry System
 
-A modern, responsive IoT Accident Alert System dashboard for vehicle safety monitoring. Built with **Arduino UNO**, **MPU6050 (6-axis accelerometer & gyroscope)**, an **Active Buzzer on Pin D8**, and a **Python Flask backend** reading live USB Serial telemetry via **PySerial**.
+A modern, responsive, cyber-tactical IoT Accident Alert System dashboard for vehicle safety monitoring. Built with **Arduino UNO**, **MPU6050 (6-axis accelerometer & gyroscope)**, an **Active Buzzer on Digital Pin D8**, and an emergency notification dispatcher configured for **+91 9265843734** with fixed GPS coordinates (`23.203549, 72.583860`).
 
-Features a cyber-tactical layout matching enterprise telemetry dashboards with real-time waveform charts, circular G-force impact donut meter, live tactical GPS incident mapping, and an embedded user-friendly serial monitor.
+Includes an official **Arduino IDE-style Serial Monitor** directly inside the dashboard with real-time bidirectional messaging, line-ending selector, baud rate dropdown, autoscroll, and timestamp controls.
+
+---
+
+## 📸 Key Features
+
+- **Cyber-Tactical Dark Interface**: Deep navy palette, glowing spline wave telemetry chart, impact risk circular gauge, dark-mode incident map, and emergency perimeter shockwaves.
+- **Embedded Arduino IDE Serial Monitor**:
+  - Message input box with **Send** button.
+  - Line ending dropdown: `Newline (\n)`, `Carriage return (\r)`, `Both NL & CR (\r\n)`, `No line ending`.
+  - Baud rate selector: `9600 baud`, `19200`, `38400`, `57600`, `115200`.
+  - Autoscroll toggle (`☑ Autoscroll`) and timestamp toggle (`☑ Show timestamp`).
+  - Terminal clear and copy controls.
+  - 1-click **Connect COM4 (Arduino Uno)** and port scanner.
+- **Automated Emergency Dispatch (+91 9265843734)**:
+  - Instant sliding toast notification with pre-formatted WhatsApp SOS button.
+  - Real-time desktop push notifications via browser Notification API.
+  - Synthesized audio siren alarm (Web Audio API).
+  - Backend SMS dispatch logged in SQLite database (`data/accidents.db`).
+  - Fixed GPS coordinates (`23.203549, 72.583860`) with direct Google Maps route link.
+- **Universal Connection Architecture**:
+  - **Local Mode**: Python Flask + PySerial reading directly from USB COM port at 9600 baud.
+  - **Cloud Mode (Vercel)**: Browser-native **Web Serial API** (`navigator.serial`) allowing Chrome/Edge users to connect their physical Arduino directly from the cloud without running Python!
 
 ---
 
@@ -10,7 +32,7 @@ Features a cyber-tactical layout matching enterprise telemetry dashboards with r
 
 ### 1. Bill of Materials
 - **Arduino UNO** (R3 or compatible with USB cable)
-- **MPU-6050** 3-Axis Accelerometer and Gyroscope Module
+- **MPU-6050** 3-Axis Accelerometer and Gyroscope Module (I2C)
 - **Active 5V Buzzer**
 - Jumper wires and breadboard
 
@@ -29,18 +51,15 @@ Features a cyber-tactical layout matching enterprise telemetry dashboards with r
 
 ## ⚡ Arduino Firmware Installation
 
-The Arduino sketch uses the built-in `Wire.h` library to read raw accelerometer registers directly from the MPU6050 (I2C address `0x68`) configured for $\pm 8\text{g}$ dynamic range.
-
-1. Open the **Arduino IDE**.
-2. Connect your **Arduino UNO** via USB.
-3. Open [`arduino/accident_detector/accident_detector.ino`](arduino/accident_detector/accident_detector.ino).
-4. Select **Tools > Board > Arduino Uno** and **Tools > Port > your Arduino COM port**.
-5. Click **Upload** (Ctrl + U).
-6. *(Close the Arduino Serial Monitor before running the Python dashboard, as only one program can access the COM port at a time).*
+1. Connect your **Arduino UNO** via USB.
+2. Open [`arduino/accident_detector/accident_detector.ino`](arduino/accident_detector/accident_detector.ino) in the **Arduino IDE**.
+3. Select **Tools > Board > Arduino Uno** and **Tools > Port > COM4** (or your detected port).
+4. Click **Upload** (Ctrl + U).
+5. **Important**: Close the Serial Monitor inside the Arduino IDE after uploading so that the dashboard can access the COM port.
 
 ---
 
-## 🐍 Backend Setup & Execution
+## 🐍 Local Backend Setup & Execution
 
 ### 1. Install Dependencies
 ```powershell
@@ -49,32 +68,36 @@ pip install -r requirements.txt
 
 ### 2. Start the Dashboard Server
 ```powershell
-python run.py
-```
-Or specify your COM port:
-```powershell
-python run.py --port COM3 --baud 9600
+python run.py --port COM4 --baud 9600
 ```
 
 ### 3. Open the Dashboard
-Open your browser and navigate to:
+Navigate to:
 ```
 http://localhost:5000
 ```
 
 ---
 
-## 🚀 Deploying to Vercel (With Web Serial Support)
+## 🚀 Pushing to GitHub & Deploying to Vercel
 
-Because this dashboard includes browser-native **Web Serial API** support (`navigator.serial`), you can deploy this repository to **Vercel** and connect to your Arduino UNO directly through your web browser (Google Chrome or Microsoft Edge) with zero software installation!
+### Step 1: Create GitHub Repository
+1. Open your GitHub account: [github.com/new](https://github.com/new)
+2. Create a new repository named: **`iot-accident-alert-system`**
+3. Leave it empty (do **not** check "Add a README file").
 
-1. Push this repository to your GitHub:
-   ```powershell
-   git remote add origin https://github.com/devashreemehta18-byte/iot-accident-alert-system.git
-   git branch -M main
-   git push -u origin main
-   ```
-2. In [Vercel](https://vercel.com), click **Add New... > Project** and import `iot-accident-alert-system`.
-3. Vercel automatically detects `vercel.json` with the output directory `frontend`. Click **Deploy**.
-4. Open the deployed Vercel link, click **Connect Arduino**, select your Arduino UNO COM port, and stream live hardware telemetry!
+### Step 2: Push Local Code to GitHub
+Run the following in PowerShell:
+```powershell
+git remote set-url origin https://github.com/devashreemehta18-byte/iot-accident-alert-system.git
+git branch -M main
+git push -u origin main
+```
 
+### Step 3: Deploy to Vercel
+1. Log in to [vercel.com](https://vercel.com).
+2. Click **Add New... > Project**.
+3. Import the **`iot-accident-alert-system`** repository.
+4. Vercel automatically detects `vercel.json` (configured for the `frontend` folder).
+5. Click **Deploy**.
+6. Open your live Vercel URL, click **🌐 Web Serial (Browser)**, pick your Arduino UNO, and stream live telemetry in Google Chrome or Microsoft Edge!
