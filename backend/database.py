@@ -30,6 +30,13 @@ def init_db():
                 sms_status TEXT DEFAULT 'SENT'
             )
         """)
+        # Schema migration check: ensure columns exist in previously-created databases
+        cursor.execute("PRAGMA table_info(accident_alerts)")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+        if "sms_recipient" not in existing_cols:
+            cursor.execute("ALTER TABLE accident_alerts ADD COLUMN sms_recipient TEXT DEFAULT '+919265843734'")
+        if "sms_status" not in existing_cols:
+            cursor.execute("ALTER TABLE accident_alerts ADD COLUMN sms_status TEXT DEFAULT 'SENT'")
         conn.commit()
 
 def log_accident(peak_magnitude, ax, ay, az, lat=FIXED_LATITUDE, lon=FIXED_LONGITUDE, recipient="+919265843734", sms_status="SENT"):

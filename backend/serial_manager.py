@@ -67,6 +67,8 @@ class SerialManager:
         self.last_status = "NORMAL"
         self.peak_in_current_alert = 0.0
         self.accident_latched_until = 0.0
+        self.accident_latched = False
+        self.line_counter = 0
 
         # Exact IDE-style Serial Monitor logs buffer
         self.serial_logs = []
@@ -250,50 +252,43 @@ class SerialManager:
         now_dt = datetime.now()
         timestamp_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        parsed_data = self._universal_parse(line_str)
+        self.line_counter += 1
+        clean_line = line_str.strip()
+        upper_line = clean_line.upper()
+
+        # Classify log type for the IDE monitor
+        log_type = "raw"
+        if "ACCIDENT DETECTED" in upper_line:
+            log_type = "alert"
+        elif any(k in upper_line for k in ["===", "***", "MPU6050", "FIXED LOCATION", "SYSTEM STATUS", "PREPARING EMERGENCY"]):
+            log_type = "system"
+        elif "MAGNITUDE" in upper_line:
+            log_type = "rx"
+
+        self._append_log(clean_line, log_type)
+
+        parsed_data = self._universal_parse(clean_line)
         if not parsed_data:
-            self._append_log(line_str, "raw")
+            # Broadcast the new serial line so IDE monitor updates immediately
+            with self.lock:
+                self.telemetry["packet_count"] += 1
+                self.telemetry["last_packet_time"] = timestamp_str
+                self.telemetry["raw"] = clean_line
+                self.telemetry["new_line"] = {
+                    "id": self.line_counter,
+                    "text": clean_line,
+                    "type": log_type,
+                    "time": now_dt.strftime("%H:%M:%S.%f")[:-3]
+                }
+            self._broadcast(self.get_telemetry())
             return
 
         ax = parsed_data.get("ax", 0.0)
         ay = parsed_data.get("ay", 0.0)
         az = parsed_data.get("az", 9.81)
         total = parsed_data.get("total", 9.81)
-        raw_status = parsed_data.get("status", "NORMAL")
-        raw_buzzer = parsed_data.get("buzzer", "OFF")
-
-        # 1. Buzzer Normalization
-        is_buzzer_active = False
-        if isinstance(raw_buzzer, bool):
-            is_buzzer_active = raw_buzzer
-        elif isinstance(raw_buzzer, (int, float)):
-            is_buzzer_active = (raw_buzzer > 0)
-        elif isinstance(raw_buzzer, str):
-            clean_b = raw_buzzer.strip().upper()
-            is_buzzer_active = clean_b in ["ON", "TRUE", "1", "HIGH", "ACTIVE"]
-
-        # 2. Accident Normalization
-        is_accident_active = False
-        if isinstance(raw_status, bool):
-            is_accident_active = raw_status
-        elif isinstance(raw_status, (int, float)):
-            is_accident_active = (raw_status > 0)
-        elif isinstance(raw_status, str):
-            clean_s = raw_status.strip().upper()
-            is_accident_active = any(w in clean_s for w in ["ACCIDENT", "CRASH", "EMERGENCY", "IMPACT"])
-
-        # 3. Hardware Safety Threshold Fallback:
-        if total >= 17.5 or abs(ax) >= 14.0 or abs(ay) >= 14.0 or is_buzzer_active:
-            is_accident_active = True
-            is_buzzer_active = True
-            self.accident_latched_until = now + 6.0
-
-        if now < self.accident_latched_until:
-            is_accident_active = True
-            is_buzzer_active = True
-
-        status = "ACCIDENT DETECTED" if is_accident_active else "NORMAL"
-        buzzer = "ON" if is_buzzer_active else "OFF"
+        status = parsed_data.get("status", "NORMAL")
+        buzzer = parsed_data.get("buzzer", "OFF")
 
         with self.lock:
             self.telemetry["connected"] = True
@@ -311,7 +306,13 @@ class SerialManager:
             self.telemetry["emergency_phone"] = notifier.EMERGENCY_PHONE
             self.telemetry["packet_count"] += 1
             self.telemetry["last_packet_time"] = timestamp_str
-            self.telemetry["raw"] = line_str
+            self.telemetry["raw"] = clean_line
+            self.telemetry["new_line"] = {
+                "id": self.line_counter,
+                "text": clean_line,
+                "type": log_type,
+                "time": now_dt.strftime("%H:%M:%S.%f")[:-3]
+            }
             self.telemetry["mode"] = "HARDWARE"
 
             if status == "ACCIDENT DETECTED":
@@ -345,13 +346,29 @@ class SerialManager:
 
             self.last_status = status
 
-        # Log exact raw packet into serial monitor like IDE
-        self._append_log(line_str, "alert" if status == "ACCIDENT DETECTED" else "raw")
         self._broadcast(self.get_telemetry())
 
     def _universal_parse(self, line_str):
+        clean_line = line_str.strip()
+        if not clean_line:
+            return None
+
+        upper_line = clean_line.upper()
+
+        # 1. Ignore Bootup & Decorative Banner lines from falsely triggering accidents
+        if any(ign in upper_line for ign in [
+            "IOT ACCIDENT ALERT SYSTEM",
+            "ACCIDENT MONITORING STARTED",
+            "MPU6050 CONNECTED",
+            "FIXED LOCATION INITIALIZED",
+            "====",
+            "****"
+        ]):
+            return None
+
+        # 2. JSON Format Check
         try:
-            data = json.loads(line_str)
+            data = json.loads(clean_line)
             if isinstance(data, dict):
                 ax = float(data.get("ax", 0.0))
                 ay = float(data.get("ay", 0.0))
@@ -365,26 +382,64 @@ class SerialManager:
         except (json.JSONDecodeError, ValueError):
             pass
 
-        status = "NORMAL"
-        buzzer = "OFF"
-        upper_line = line_str.upper()
+        # 3. User's Arduino Code Format: "Acceleration Magnitude: 9.81"
+        mag_match = re.search(r"Acceleration\s*Magnitude\s*:\s*([-+]?\d*\.?\d+)", clean_line, re.IGNORECASE)
+        if mag_match:
+            total = float(mag_match.group(1))
+            if total > 9.81:
+                excess = (total**2 - 9.81**2)**0.5 if total > 9.81 else 0.0
+                ax = excess * 0.707
+                ay = excess * 0.707
+                az = 9.81 + (total - 9.81) * 0.2
+            else:
+                ax = 0.05
+                ay = -0.05
+                az = total
+            
+            is_crash = (total >= 20.0 or getattr(self, "accident_latched", False) or time.time() < getattr(self, "accident_latched_until", 0))
+            if total >= 20.0:
+                self.accident_latched = True
+                self.accident_latched_until = time.time() + 15.0
+                is_crash = True
 
-        if any(w in upper_line for w in ["ACCIDENT", "CRASH", "EMERGENCY"]):
-            status = "ACCIDENT DETECTED"
-        if any(w in upper_line for w in ["BUZZER: ON", "BUZZER ON", "BUZZER:ON", "BUZZER=ON"]):
-            buzzer = "ON"
+            return {
+                "ax": round(ax, 2), "ay": round(ay, 2), "az": round(az, 2),
+                "total": round(total, 2),
+                "status": "ACCIDENT DETECTED" if is_crash else "NORMAL",
+                "buzzer": "ON" if is_crash else "OFF"
+            }
 
-        nums = [float(x) for x in re.findall(r"[-+]?\d*\.\d+|\d+", line_str)]
+        # 4. Explicit Accident Detection Line from Arduino: "ACCIDENT DETECTED!"
+        if "ACCIDENT DETECTED" in upper_line or "EMERGENCY ALERT PREPARED" in upper_line:
+            self.accident_latched = True
+            self.accident_latched_until = time.time() + 15.0
+            return {
+                "ax": 24.5, "ay": 15.2, "az": 8.4, "total": 29.8,
+                "status": "ACCIDENT DETECTED",
+                "buzzer": "ON"
+            }
+
+        # 5. Normal Status Indicator: "System Status: NORMAL"
+        if "STATUS: NORMAL" in upper_line or "STATUS:NORMAL" in upper_line:
+            self.accident_latched = False
+            self.accident_latched_until = 0.0
+            return {
+                "ax": 0.05, "ay": -0.05, "az": 9.81, "total": 9.81,
+                "status": "NORMAL",
+                "buzzer": "OFF"
+            }
+
+        # 6. Multi-number fallback (e.g. "X: 0.1 Y: 0.2 Z: 9.8"):
+        nums = [float(x) for x in re.findall(r"[-+]?\d*\.\d+|\d+", clean_line)]
         if len(nums) >= 3:
             ax, ay, az = nums[0], nums[1], nums[2]
             total = nums[3] if len(nums) >= 4 else (ax**2 + ay**2 + az**2)**0.5
+            is_crash = (total >= 20.0 or getattr(self, "accident_latched", False) or time.time() < getattr(self, "accident_latched_until", 0))
             return {
                 "ax": ax, "ay": ay, "az": az, "total": total,
-                "status": status, "buzzer": buzzer
+                "status": "ACCIDENT DETECTED" if is_crash else "NORMAL",
+                "buzzer": "ON" if is_crash else "OFF"
             }
-
-        if status == "ACCIDENT DETECTED" or buzzer == "ON":
-            return {"ax": 20.0, "ay": 10.0, "az": 8.0, "total": 23.5, "status": status, "buzzer": buzzer}
 
         return None
 

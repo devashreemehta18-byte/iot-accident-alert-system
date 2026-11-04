@@ -544,26 +544,62 @@ async function connectWebSerial() {
 }
 
 function parseIncomingSerialLine(lineStr) {
-  let parsed = null;
-  try {
-    parsed = JSON.parse(lineStr);
-  } catch (e) {
-    const upper = lineStr.toUpperCase();
-    const isAcc = upper.includes("ACCIDENT") || upper.includes("CRASH");
-    const isBz = upper.includes("BUZZER: ON") || upper.includes("BUZZER ON") || upper.includes("BUZZER=ON");
-    parsed = {
-      ax: 0.1, ay: -0.1, az: 9.8, total: 9.8,
+  const clean = lineStr.trim();
+  if (!clean) return;
+
+  const upper = clean.toUpperCase();
+  const isAlert = upper.includes("ACCIDENT DETECTED") || upper.includes("CRASH");
+  const isSys = upper.includes("===") || upper.includes("***") || upper.includes("MPU6050") || upper.includes("LOCATION");
+  appendIdeTerminal(clean, isAlert ? "ide-alert" : (isSys ? "ide-sys" : "ide-rx"));
+
+  // 1. Check user's Arduino code: "Acceleration Magnitude: 9.81"
+  const magMatch = clean.match(/Acceleration\s*Magnitude\s*:\s*([-+]?\d*\.?\d+)/i);
+  if (magMatch) {
+    const total = parseFloat(magMatch[1]);
+    const isAcc = total >= 20.0 || state.isAccidentActive;
+    handleTelemetryUpdate({
+      connected: true,
+      ax: total > 9.81 ? Math.sqrt(Math.max(0, total**2 - 9.81**2)) * 0.707 : 0.05,
+      ay: total > 9.81 ? Math.sqrt(Math.max(0, total**2 - 9.81**2)) * 0.707 : -0.05,
+      az: Math.min(total, 9.81),
+      total: total,
       status: isAcc ? "ACCIDENT DETECTED" : "NORMAL",
-      buzzer: isBz ? "ON" : "OFF",
-      raw: lineStr
-    };
+      buzzer: isAcc ? "ON" : "OFF"
+    });
+    return;
   }
 
-  if (parsed) {
+  // 2. Check explicit accident: "ACCIDENT DETECTED!"
+  if (upper.includes("ACCIDENT DETECTED")) {
+    handleTelemetryUpdate({
+      connected: true,
+      ax: 24.5, ay: 15.2, az: 8.4, total: 29.8,
+      status: "ACCIDENT DETECTED",
+      buzzer: "ON"
+    });
+    return;
+  }
+
+  // 3. Check normal status: "System Status: NORMAL"
+  if (upper.includes("STATUS: NORMAL") || upper.includes("STATUS:NORMAL")) {
+    handleTelemetryUpdate({
+      connected: true,
+      ax: 0.05, ay: -0.05, az: 9.81, total: 9.81,
+      status: "NORMAL",
+      buzzer: "OFF"
+    });
+    return;
+  }
+
+  // 4. JSON parse fallback
+  try {
+    const parsed = JSON.parse(clean);
     parsed.connected = true;
     handleTelemetryUpdate(parsed);
-  }
+  } catch(e) {}
 }
+
+let lastSeenLineId = -1;
 
 // -----------------------------------------------------------------------------
 // Unified Telemetry Handler (SSE Stream & Web Serial)
@@ -666,13 +702,17 @@ function handleTelemetryUpdate(data) {
   // 7. Push data to Spline Wave Chart
   pushWaveChartData(ax, ay, az, total);
 
-  // 8. Stream to Arduino IDE Serial Monitor
-  if (data.raw) {
-    appendIdeTerminal(data.raw, isAccident ? "ide-alert" : "ide-rx");
-  } else if (data.logs && Array.isArray(data.logs)) {
-    const latest = data.logs[data.logs.length - 1];
-    if (latest && latest.text) {
-      appendIdeTerminal(latest.text, latest.type === "alert" ? "ide-alert" : "ide-rx");
+  // 8. Stream to Arduino IDE Serial Monitor (Appends each unique line from Arduino once)
+  if (data.new_line && data.new_line.id !== lastSeenLineId) {
+    lastSeenLineId = data.new_line.id;
+    const cls = data.new_line.type === "alert" ? "ide-alert" : 
+                (data.new_line.type === "system" ? "ide-sys" : "ide-rx");
+    appendIdeTerminal(data.new_line.text, cls);
+  } else if (!data.new_line && data.raw && !webSerialPort) {
+    // Fallback if line ID not provided
+    if (data.raw !== state.lastAppendedRaw) {
+      state.lastAppendedRaw = data.raw;
+      appendIdeTerminal(data.raw, isAccident ? "ide-alert" : "ide-rx");
     }
   }
 
