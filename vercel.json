@@ -1,14 +1,7 @@
 {
-  "version": 2,
-  "name": "iot-accident-alert-system",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": false,
-  "outputDirectory": "frontend",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/$1"
-    }
-  ]
+  "buildCommand": null,
+  "outputDirectory": "."
 }
-

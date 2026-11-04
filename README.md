@@ -65,7 +65,7 @@ Includes an official **Arduino IDE-style Serial Monitor** directly inside the da
 
 ### 1. Install Dependencies
 ```powershell
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 ### 2. Start the Dashboard Server

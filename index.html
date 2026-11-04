@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRASHGUARD IoT | Real-Time Vehicle Accident Alert & Telemetry</title>
+  
+  <!-- Modern Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS for Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <!-- Custom Cyber-Aesthetic Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Fullscreen Emergency Red Perimeter Shockwave -->
+  <div id="emergencyPerimeter"></div>
+
+  <!-- Sliding In-App Emergency Notification Toast -->
+  <div id="emergencyToast" class="toast-notification">
+    <div style="display: flex; gap: 0.85rem; align-items: flex-start;">
+      <span style="font-size: 1.8rem; filter: drop-shadow(0 0 10px #ef4444);">🚨</span>
+      <div style="flex: 1;">
+        <div id="toastDetails">
+          <div style="font-weight: 800; color: #fff; font-size: 0.88rem; letter-spacing: 0.03em;">ACCIDENT ALERT DISPATCHED</div>
+          <div style="color: #cbd5e1; font-size: 0.78rem; margin-top: 0.2rem;">
+            Emergency notification sent to <strong style="color: #38bdf8;">+91 9265843734</strong><br>
+            Location: <strong style="color: #38bdf8;">23.203549, 72.583860</strong>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.65rem;">
+          <a id="toastWhatsApp" href="https://api.whatsapp.com/send?phone=919265843734" target="_blank" class="btn btn-whatsapp" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+            📲 Open WhatsApp (+91 9265843734)
+          </a>
+          <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="btn btn-glass" style="padding: 0.35rem 0.65rem; font-size: 0.75rem;">
+            🗺️ Google Maps
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Critical Emergency Modal Popup -->
+  <div id="accidentModal" class="modal-backdrop">
+    <div class="modal-window accident-modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="siren-pulse-badge">🚨</div>
+          <div>
+            <h2 style="font-size: 1.35rem; font-weight: 900; color: #f87171; letter-spacing: 0.04em; text-transform: uppercase;">
+              CRITICAL: ACCIDENT DETECTED!
+            </h2>
+            <p style="font-size: 0.8rem; color: #cbd5e1;">Hardware buzzer active on Pin D8 | High impact shock recorded</p>
+          </div>
+        </div>
+        <button id="btnCloseAccidentModal" class="btn-close-modal">&times;</button>
+      </div>
+
+      <div class="modal-impact-grid">
+        <div class="modal-impact-card">
+          <span class="impact-label">PEAK IMPACT FORCE</span>
+          <span id="modalPeakForce" class="impact-value">28.45 m/s²</span>
+        </div>
+        <div class="modal-impact-card">
+          <span class="impact-label">HARDWARE BUZZER</span>
+          <span class="impact-value" style="color: #f87171;">SOUNDING (D8)</span>
+        </div>
+        <div class="modal-impact-card">
+          <span class="impact-label">REGISTERED SOS NUMBER</span>
+          <span class="impact-value" style="color: #38bdf8;">+91 9265843734</span>
+        </div>
+        <div class="modal-impact-card">
+          <span class="impact-label">INCIDENT COORDINATES</span>
+          <span class="impact-value" style="font-size: 0.95rem;">23.203549, 72.583860</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a id="modalWhatsAppBtn" href="https://api.whatsapp.com/send?phone=919265843734" target="_blank" class="btn btn-whatsapp" style="flex: 1; justify-content: center; padding: 0.75rem; font-size: 0.88rem;">
+          📲 Send WhatsApp SOS (+91 9265843734)
+        </a>
+        <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="btn btn-primary" style="flex: 1; justify-content: center; padding: 0.75rem; font-size: 0.88rem;">
+          🗺️ Open Google Maps Location
+        </a>
+        <button id="btnDismissModal" class="btn btn-glass" style="padding: 0.75rem 1.25rem;">
+          Dismiss Alarm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-wrapper">
+
+    <!-- Top Navigation Header (Matching Reference Image Style) -->
+    <header class="top-navbar">
+      <div class="nav-left">
+        <div class="nav-brand">
+          <div class="brand-shield-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </div>
+          <div class="brand-title-wrap">
+            <span class="brand-title">CRASHGUARD</span>
+            <span class="brand-subtitle">IoT ACCIDENT ALERT</span>
+          </div>
+        </div>
+
+        <nav class="nav-tabs">
+          <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
+          <button class="nav-tab" data-tab="telemetry">Telemetry</button>
+          <button class="nav-tab" data-tab="serial">IDE Serial Monitor</button>
+          <button class="nav-tab" data-tab="history">Accident Logs</button>
+          <button class="nav-tab" data-tab="sos">SOS Dispatch</button>
+        </nav>
+      </div>
+
+      <div class="nav-right">
+        <!-- Quick Search -->
+        <div class="nav-search-box">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" placeholder="Search telemetry..." readonly>
+        </div>
+
+        <!-- Siren Mute Toggle -->
+        <button id="btnToggleSound" class="nav-action-btn" title="Toggle Emergency Siren Tone">
+          <span id="soundIcon">🔊</span>
+        </button>
+
+        <!-- Notification Bell with Active Badge -->
+        <div class="nav-bell-wrap" id="btnNotificationBell" title="Emergency Notifications">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span id="navAlertBadge" class="nav-alert-counter">1</span>
+        </div>
+
+        <!-- Arduino Live Port Badge -->
+        <div id="hardwareLinkBadge" class="nav-device-badge">
+          <span class="device-dot"></span>
+          <span id="hardwareLinkText">COM4: Arduino Uno</span>
+        </div>
+
+        <!-- User / Vehicle Profile -->
+        <div class="nav-user-pill">
+          <div class="user-avatar">🚗</div>
+          <span class="user-name">Vehicle #18</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Emergency Active Warning Banner (Visible on Collision) -->
+    <div id="emergencyBanner" class="emergency-alert-banner">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <span style="font-size: 1.8rem; animation: rotateSiren 1s infinite linear;">🚨</span>
+        <div>
+          <div style="font-weight: 900; font-size: 1.05rem; letter-spacing: 0.05em; text-transform: uppercase;">
+            CRITICAL IMPACT DETECTED! ACCIDENT ALERT ACTIVE
+          </div>
+          <div style="font-size: 0.8rem; color: #fee2e2; margin-top: 0.15rem;">
+            Hardware buzzer sounding on Pin D8. Emergency SMS & Location link dispatched to <strong>+91 9265843734</strong>.
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <a href="https://api.whatsapp.com/send?phone=919265843734" target="_blank" class="btn btn-whatsapp" style="font-size: 0.78rem;">
+          📲 WhatsApp SOS (+91 9265843734)
+        </a>
+        <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="btn btn-glass" style="font-size: 0.78rem;">
+          🗺️ Google Maps
+        </a>
+      </div>
+    </div>
+
+    <!-- Quick Action Bar -->
+    <div class="quick-action-bar">
+      <div class="action-left">
+        <span class="section-title-label">REAL-TIME MONITORING CONSOLE</span>
+        <span class="live-pulse-badge"><span class="pulse-ring"></span> LIVE 10Hz TELEMETRY</span>
+      </div>
+      <div class="action-right">
+        <!-- 1-Click Connect Arduino UNO Button -->
+        <button id="btnQuickConnectArduino" class="btn btn-primary" title="Connect to Arduino UNO on COM4">
+          🔌 Connect COM4 (Arduino Uno)
+        </button>
+        <button id="btnWebSerialConnect" class="btn btn-glass" title="Direct browser USB connection via Web Serial">
+          🌐 Web Serial (Browser)
+        </button>
+        <!-- Test Crash Collision Simulation Button -->
+        <button id="btnTestCrash" class="btn btn-danger" title="Simulate high-G crash to test alarm and notifications">
+          💥 Simulate Crash
+        </button>
+        <!-- Reset to Safe State Button -->
+        <button id="btnResetSafe" class="btn btn-glass" title="Reset vehicle status to Normal Safe">
+          ✅ Reset Safe
+        </button>
+        <!-- Test SMS / WhatsApp Notification Button -->
+        <button id="btnTestNotification" class="btn btn-glass" title="Dispatch test alert to +91 9265843734">
+          📲 Test SOS (9265843734)
+        </button>
+      </div>
+    </div>
+
+    <!-- 3-Column Main Dashboard Grid (Exact Structure of Reference Image) -->
+    <main class="dashboard-grid">
+
+      <!-- =====================================================================
+           LEFT COLUMN: Overview & Recent Alerts
+           ===================================================================== -->
+      <section class="grid-col col-left">
+
+        <!-- Card: Overview (Matching Top-Left of Reference Image) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <h3 class="card-title">Overview</h3>
+            <span class="card-meta-tag">SYSTEM METRICS</span>
+          </div>
+
+          <div class="overview-list">
+            <!-- Item 1: Active Threats / Accidents -->
+            <div class="overview-item">
+              <div class="overview-item-left">
+                <div class="icon-circle icon-red">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2.4">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                </div>
+                <span class="overview-label">Active Alerts</span>
+              </div>
+              <div class="overview-item-right">
+                <span id="statActiveAlerts" class="overview-val val-red">0</span>
+                <span class="overview-arrow">›</span>
+              </div>
+            </div>
+
+            <!-- Item 2: Resolved Cases / Safe Driving -->
+            <div class="overview-item">
+              <div class="overview-item-left">
+                <div class="icon-circle icon-green">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                </div>
+                <span class="overview-label">Safe Driving Cycles</span>
+              </div>
+              <div class="overview-item-right">
+                <span id="statResolvedCases" class="overview-val val-green">128</span>
+                <span class="overview-arrow">›</span>
+              </div>
+            </div>
+
+            <!-- Item 3: Impact Events -->
+            <div class="overview-item">
+              <div class="overview-item-left">
+                <div class="icon-circle icon-amber">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.4">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                </div>
+                <span class="overview-label">Total Impact Events</span>
+              </div>
+              <div class="overview-item-right">
+                <span id="statTotalEvents" class="overview-val val-amber">34</span>
+                <span class="overview-arrow">›</span>
+              </div>
+            </div>
+
+            <!-- Item 4: System Status Pill -->
+            <div class="overview-item">
+              <div class="overview-item-left">
+                <div class="icon-circle icon-blue">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.4">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                </div>
+                <span class="overview-label">Vehicle Status</span>
+              </div>
+              <div class="overview-item-right">
+                <span id="overviewStatusBadge" class="status-pill status-pill-safe">NORMAL</span>
+                <span class="overview-arrow">›</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Recent Alerts (Matching Bottom-Left of Reference Image) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <h3 class="card-title">Recent Alerts</h3>
+            <button id="btnQuickAddAlert" class="card-add-btn" title="Simulate impact alert">+</button>
+          </div>
+
+          <div id="recentAlertsList" class="recent-alerts-list">
+            <!-- Alert 1 -->
+            <div class="alert-item">
+              <div class="alert-icon-wrap alert-critical">⚠️</div>
+              <div class="alert-content">
+                <div class="alert-title-row">
+                  <span class="alert-title">Severe Impact Detected</span>
+                  <span class="severity-tag severity-critical">Critical ›</span>
+                </div>
+                <div class="alert-meta-row">
+                  <span class="alert-time">5 min ago</span>
+                  <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="alert-link">View Details</a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alert 2 -->
+            <div class="alert-item">
+              <div class="alert-icon-wrap alert-warning">ℹ️</div>
+              <div class="alert-content">
+                <div class="alert-title-row">
+                  <span class="alert-title">Sudden Deceleration</span>
+                  <span class="severity-tag severity-medium">Medium ›</span>
+                </div>
+                <div class="alert-meta-row">
+                  <span class="alert-time">20 min ago</span>
+                  <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="alert-link">View Details</a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alert 3 -->
+            <div class="alert-item">
+              <div class="alert-icon-wrap alert-critical">🚨</div>
+              <div class="alert-content">
+                <div class="alert-title-row">
+                  <span class="alert-title">Hardware Buzzer Trigger</span>
+                  <span class="severity-tag severity-critical">Critical ›</span>
+                </div>
+                <div class="alert-meta-row">
+                  <span class="alert-time">45 min ago</span>
+                  <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="alert-link">View Details</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- =====================================================================
+           CENTER COLUMN: Dynamics Chart, GPS Map & Incident Timeline
+           ===================================================================== -->
+      <section class="grid-col col-center">
+
+        <!-- Card: Threat / Acceleration Dynamics (Matching Top-Center Chart of Reference) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Acceleration & Impact Dynamics</h3>
+              <p class="card-desc">Real-time MPU6050 3-Axis & Total Magnitude Waveform</p>
+            </div>
+            <div class="chart-time-select-wrap">
+              <select id="chartTimeSelect" class="cyber-select">
+                <option value="realtime">Real-time (10 Hz)</option>
+                <option value="5m">Last 5 Min</option>
+                <option value="15m">Last 15 Min</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Spline Wave Chart Canvas -->
+          <div class="spline-chart-container">
+            <canvas id="dynamicsWaveCanvas"></canvas>
+          </div>
+
+          <!-- Glowing Legend Pills (Matching Reference Image) -->
+          <div class="chart-legend-pills">
+            <span class="legend-pill"><span class="legend-dot dot-blue"></span> Total Magnitude (|a|)</span>
+            <span class="legend-pill"><span class="legend-dot dot-red"></span> Lateral (X)</span>
+            <span class="legend-pill"><span class="legend-dot dot-amber"></span> Longitudinal (Y)</span>
+            <span class="legend-pill"><span class="legend-dot dot-purple"></span> Vertical (Z)</span>
+            <span class="legend-pill threshold-pill"><span class="legend-dot dot-threshold"></span> Threshold: 17.5 m/s²</span>
+          </div>
+        </div>
+
+        <!-- Card: Fixed GPS Location & Interactive Map (Matching Center Map of Reference) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Vehicle GPS Location & Telemetry Stream</h3>
+              <p class="card-desc">Fixed coordinates tracked with instant Google Maps routing</p>
+            </div>
+            <div class="card-header-actions">
+              <span class="signal-indicator" title="Telemetry Signal Strength">
+                <span></span><span></span><span></span><span></span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Leaflet Dark Map Container -->
+          <div id="gpsMap" class="cyber-map-box"></div>
+
+          <!-- Map Footer Stats Bar -->
+          <div class="map-stats-bar">
+            <div class="map-stat-group">
+              <div class="map-stat-item">
+                <span class="stat-icon-down">📥</span>
+                <span class="stat-text">Data In: <strong id="statDataIn" style="color: #38bdf8;">10 Hz (Serial)</strong></span>
+              </div>
+              <div class="map-stat-item">
+                <span class="stat-icon-up">📤</span>
+                <span class="stat-text">Baud Rate: <strong id="statBaudRate" style="color: #cbd5e1;">9600 bps</strong></span>
+              </div>
+            </div>
+
+            <div class="map-coord-group">
+              <span class="coord-display">📍 23.203549, 72.583860</span>
+              <button id="btnCopyCoords" class="btn btn-glass btn-sm" title="Copy Coordinates">📋 Copy</button>
+              <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="btn btn-primary btn-sm">
+                🗺️ Open Maps
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Incident Timeline Distribution (Matching Bottom-Center Bar Chart of Reference) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Impact Incident Timeline</h3>
+              <p class="card-desc">Historical G-force spikes vs safe driving durations</p>
+            </div>
+            <div class="tab-pill-group">
+              <button class="tab-pill-btn active" data-period="weekly">Weekly</button>
+              <button class="tab-pill-btn" data-period="monthly">Monthly</button>
+              <button class="tab-pill-btn" data-period="yearly">Yearly</button>
+            </div>
+          </div>
+
+          <!-- Dual Bar Chart Container -->
+          <div class="bars-chart-container">
+            <canvas id="incidentBarsCanvas"></canvas>
+          </div>
+
+          <div class="chart-bars-legend">
+            <span><span class="bar-legend-square bg-blue"></span> Safe Driving Sessions</span>
+            <span><span class="bar-legend-square bg-red"></span> High G-Force Spikes</span>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- =====================================================================
+           RIGHT COLUMN: Risk Gauge, Device Status & Incident Summary
+           ===================================================================== -->
+      <section class="grid-col col-right">
+
+        <!-- Card: Crash Risk Report / G-Force Ring (Matching Top-Right of Reference Image) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <h3 class="card-title">Crash Risk Report</h3>
+            <span class="card-gear-icon" id="btnOpenThresholdSettings" title="Threshold settings">⚙️</span>
+          </div>
+
+          <div class="gauge-donut-wrapper">
+            <!-- Circular Donut SVG Gauge -->
+            <div class="donut-svg-box">
+              <svg class="donut-svg" viewBox="0 0 160 160">
+                <circle class="donut-bg-ring" cx="80" cy="80" r="64"></circle>
+                <circle id="donutProgressRing" class="donut-fill-ring" cx="80" cy="80" r="64"></circle>
+              </svg>
+              <div class="donut-center-content">
+                <span id="donutPercentText" class="donut-pct">9.81</span>
+                <span class="donut-unit">m/s²</span>
+                <span id="donutRiskLevel" class="donut-risk-label">Normal Safe</span>
+              </div>
+            </div>
+
+            <!-- Risk Level Breakdown -->
+            <div class="risk-breakdown-list">
+              <div class="risk-breakdown-item">
+                <span class="risk-icon" style="color: #ef4444;">▲</span>
+                <span class="risk-name">Critical Shock (&gt;17.5 m/s²)</span>
+                <span id="countCritical" class="risk-val" style="color: #ef4444;">0</span>
+              </div>
+              <div class="risk-breakdown-item">
+                <span class="risk-icon" style="color: #f59e0b;">●</span>
+                <span class="risk-name">High G-Force (&gt;12.0 m/s²)</span>
+                <span id="countHighRisk" class="risk-val" style="color: #f59e0b;">0</span>
+              </div>
+              <div class="risk-breakdown-item">
+                <span class="risk-icon" style="color: #10b981;">✓</span>
+                <span class="risk-name">Resting Gravity (~9.8 m/s²)</span>
+                <span id="countNormal" class="risk-val" style="color: #10b981;">100%</span>
+              </div>
+            </div>
+
+            <!-- Big Blue Gradient CTA Button (Matching "Scan Now" in Reference Image) -->
+            <button id="btnTriggerSOSNow" class="cyber-cta-btn">
+              🚨 Trigger SOS Alert (9265843734)
+            </button>
+          </div>
+        </div>
+
+        <!-- Card: Hardware Device Status (Matching Middle-Right of Reference Image) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <h3 class="card-title">Device Status</h3>
+            <span class="card-gear-icon" title="Hardware configuration">⚙️</span>
+          </div>
+
+          <div class="device-status-list">
+            <!-- Device 1: Arduino UNO -->
+            <div class="device-status-item">
+              <div class="device-left">
+                <span class="device-glyph">🔌</span>
+                <div>
+                  <div class="device-name">Arduino UNO (COM4)</div>
+                  <div class="device-sub">USB Serial @ 9600 bps</div>
+                </div>
+              </div>
+              <div class="device-right">
+                <span id="badgeArduinoStatus" class="device-state-pill pill-online">Connected ›</span>
+              </div>
+            </div>
+
+            <!-- Device 2: MPU6050 Accelerometer -->
+            <div class="device-status-item">
+              <div class="device-left">
+                <span class="device-glyph">🧭</span>
+                <div>
+                  <div class="device-name">MPU6050 Accelerometer</div>
+                  <div class="device-sub">I2C Pins A4/A5 (0x68)</div>
+                </div>
+              </div>
+              <div class="device-right">
+                <span id="badgeMPUStatus" class="device-state-pill pill-online">Active ›</span>
+              </div>
+            </div>
+
+            <!-- Device 3: Active Buzzer Pin D8 -->
+            <div class="device-status-item">
+              <div class="device-left">
+                <span class="device-glyph">🔔</span>
+                <div>
+                  <div class="device-name">Active Buzzer Siren</div>
+                  <div class="device-sub">Digital Pin D8</div>
+                </div>
+              </div>
+              <div class="device-right">
+                <span id="badgeBuzzerStatus" class="device-state-pill pill-silent">OFF (Silent) ›</span>
+              </div>
+            </div>
+
+            <!-- Device 4: Emergency Dispatch -->
+            <div class="device-status-item">
+              <div class="device-left">
+                <span class="device-glyph">📲</span>
+                <div>
+                  <div class="device-name">Emergency Dispatch</div>
+                  <div class="device-sub">+91 9265843734</div>
+                </div>
+              </div>
+              <div class="device-right">
+                <span class="device-state-pill pill-online">Armed ›</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Incident & Emergency Summary (Matching Bottom-Right of Reference Image) -->
+        <div class="cyber-card">
+          <div class="card-header">
+            <h3 class="card-title">Emergency SOS Summary</h3>
+            <span class="card-bar-icon">📶</span>
+          </div>
+
+          <div class="incident-summary-list">
+            <div class="summary-item">
+              <span class="summary-bullet bullet-blue"></span>
+              <span class="summary-text">Target SOS Number:</span>
+              <strong style="color: #38bdf8; font-family: var(--font-mono);">+91 9265843734</strong>
+            </div>
+            <div class="summary-item">
+              <span class="summary-bullet bullet-green"></span>
+              <span class="summary-text">Automated Alert:</span>
+              <strong style="color: #34d399;">Armed & Ready</strong>
+            </div>
+            <div class="summary-item">
+              <span class="summary-bullet bullet-amber"></span>
+              <span class="summary-text">GPS Coordinates:</span>
+              <strong style="font-family: var(--font-mono); color: #cbd5e1;">23.203549, 72.583860</strong>
+            </div>
+          </div>
+
+          <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+            <a href="https://api.whatsapp.com/send?phone=919265843734" target="_blank" class="btn btn-whatsapp" style="flex: 1; justify-content: center; font-size: 0.78rem;">
+              📲 WhatsApp SOS
+            </a>
+            <button id="btnExportLogs" class="btn btn-glass" style="font-size: 0.78rem;">
+              📥 Export CSV
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+
+    <!-- =======================================================================
+         DEDICATED ARDUINO IDE SERIAL MONITOR SECTION
+         Designed EXACTLY like the official Arduino IDE Serial Monitor!
+         ======================================================================= -->
+    <section class="serial-monitor-section" id="serialMonitorSection">
+      <div class="cyber-card serial-ide-container">
+        
+        <!-- IDE Serial Monitor Title & Status Bar -->
+        <div class="ide-title-bar">
+          <div class="ide-title-left">
+            <div class="ide-icon-arduino">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="12" r="5"></circle>
+                <circle cx="16" cy="12" r="5"></circle>
+                <line x1="6" y1="12" x2="10" y2="12"></line>
+                <line x1="8" y1="10" x2="8" y2="14"></line>
+                <line x1="14" y1="12" x2="18" y2="12"></line>
+              </svg>
+            </div>
+            <div>
+              <span class="ide-title-text">Arduino IDE Serial Monitor</span>
+              <span id="idePortBadge" class="ide-port-pill">COM4 (Arduino Uno)</span>
+            </div>
+          </div>
+
+          <div class="ide-title-right">
+            <span class="ide-status-label" id="ideStatusLabel">CONNECTED @ 9600 BAUD</span>
+            <button id="btnToggleIdeExpand" class="btn btn-glass btn-sm" title="Expand Serial Monitor">
+              ⛶ Expand
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Top Message Send Bar (Exact Arduino IDE Layout) -->
+        <div class="ide-send-toolbar">
+          <div class="ide-input-wrapper">
+            <input type="text" id="ideSerialInput" placeholder="Send message or command to Arduino (e.g. RESET, PING, STATUS)..." autocomplete="off">
+          </div>
+          <button id="btnIdeSend" class="btn btn-primary ide-send-btn">
+            Send
+          </button>
+          <div class="ide-dropdown-wrap">
+            <select id="ideLineEndingSelect" class="ide-select" title="Line Ending">
+              <option value="\n">Newline (\n)</option>
+              <option value="\r">Carriage return (\r)</option>
+              <option value="\r\n" selected>Both NL &amp; CR (\r\n)</option>
+              <option value="">No line ending</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 2. Dark Monospace Serial Terminal Console -->
+        <div id="ideSerialTerminal" class="ide-terminal-console">
+          <div class="ide-line ide-sys">[SYSTEM] Arduino IDE Serial Monitor initialized. Connected to COM4.</div>
+          <div class="ide-line ide-info">[CONFIG] Target Emergency Recipient: +91 9265843734 | Fixed GPS: 23.203549, 72.583860</div>
+          <div class="ide-line ide-rx">[ARDUINO] {"ax":0.11,"ay":-0.08,"az":9.81,"total":9.81,"status":"NORMAL","buzzer":"OFF"}</div>
+        </div>
+
+        <!-- 3. Bottom Controls Toolbar (Exact Arduino IDE Layout) -->
+        <div class="ide-bottom-toolbar">
+          <div class="ide-bottom-left">
+            <label class="ide-checkbox-label">
+              <input type="checkbox" id="chkIdeAutoscroll" checked>
+              <span>Autoscroll</span>
+            </label>
+            <label class="ide-checkbox-label">
+              <input type="checkbox" id="chkIdeTimestamp" checked>
+              <span>Show timestamp</span>
+            </label>
+            <button id="btnIdeClearConsole" class="btn btn-glass btn-sm">
+              Clear Output
+            </button>
+            <button id="btnIdeCopyConsole" class="btn btn-glass btn-sm">
+              Copy All
+            </button>
+          </div>
+
+          <div class="ide-bottom-right">
+            <!-- Baud Rate Dropdown -->
+            <div class="ide-baud-wrap">
+              <label for="ideBaudRateSelect" style="font-size: 0.75rem; color: #94a3b8;">Baud:</label>
+              <select id="ideBaudRateSelect" class="ide-select">
+                <option value="9600" selected>9600 baud</option>
+                <option value="19200">19200 baud</option>
+                <option value="38400">38400 baud</option>
+                <option value="57600">57600 baud</option>
+                <option value="115200">115200 baud</option>
+              </select>
+            </div>
+
+            <!-- Hardware Port Quick Reconnect / Switch -->
+            <select id="idePortSelect" class="ide-select">
+              <option value="COM4" selected>COM4 (Arduino Uno)</option>
+              <option value="WEB_SERIAL">Web Serial API</option>
+            </select>
+            <button id="btnIdeConnectPort" class="btn btn-primary btn-sm">
+              🔌 Connect
+            </button>
+            <button id="btnIdeScanPorts" class="btn btn-glass btn-sm" title="Scan COM ports">
+              🔄 Scan
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- =======================================================================
+         ACCIDENT ALERT HISTORY & NOTIFICATION DISPATCH LOGS
+         ======================================================================= -->
+    <section class="cyber-card table-section">
+      <div class="card-header">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <h3 class="card-title">Accident Alert & Notification Dispatch History</h3>
+          <span id="alertsCountBadge" class="card-meta-tag">0 Incidents</span>
+        </div>
+        <div style="display: flex; gap: 0.4rem;">
+          <a href="/api/alerts/export" class="btn btn-glass btn-sm">
+            📥 Export CSV
+          </a>
+          <button id="btnClearAlertHistory" class="btn btn-glass btn-sm">
+            🗑️ Clear History
+          </button>
+        </div>
+      </div>
+
+      <div class="table-scroll-wrapper">
+        <table class="cyber-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Timestamp</th>
+              <th>Peak Magnitude</th>
+              <th>Vectors (X/Y/Z)</th>
+              <th>SMS Recipient</th>
+              <th>Status</th>
+              <th>Incident Location</th>
+            </tr>
+          </thead>
+          <tbody id="alertsTableBody">
+            <!-- Populated via JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Chart.js & Leaflet JS CDNs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Main Application Script -->
+  <script src="js/app.js"></script>
+</body>
+</html>
