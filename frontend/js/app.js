@@ -1,6 +1,7 @@
 /**
- * IoT Accident Alert System - Application Controller
- * Handles real-time MPU6050 telemetry, Web Serial API, and Cyber Card UI.
+ * CRASHGUARD IoT - High-Performance Application Controller
+ * Real-time MPU6050 telemetry, Web Serial API, Emergency SMS/WhatsApp to +91 9265843734,
+ * Desktop Web Notifications, and Leaflet Map Tracking.
  */
 
 const state = {
@@ -14,14 +15,19 @@ const state = {
   fixedLat: 23.203549,
   fixedLon: 72.583860,
   googleMapsUrl: "https://www.google.com/maps?q=23.203549,72.583860",
+  emergencyPhone: "+919265843734",
+  rawPhone: "9265843734",
   audioMuted: false,
   isAccidentActive: false,
-  serialPaused: false
+  serialPaused: false,
+  hasRequestedNotification: false
 };
 
-// Audio Alarm Synthesizer
+// -----------------------------------------------------------------------------
+// Audio Alarm Synthesizer (Web Audio API)
+// -----------------------------------------------------------------------------
 let audioCtx = null;
-let sirenTimer = null;
+let sirenInterval = null;
 
 function initAudio() {
   if (!audioCtx) {
@@ -37,9 +43,9 @@ function playSirenTone() {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(920, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(950, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(560, audioCtx.currentTime + 0.35);
-    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
     osc.connect(gain);
     gain.connect(audioCtx.destination);
@@ -49,145 +55,238 @@ function playSirenTone() {
 }
 
 function startSiren() {
-  if (sirenTimer) return;
+  if (sirenInterval) return;
   initAudio();
   playSirenTone();
-  sirenTimer = setInterval(playSirenTone, 450);
+  sirenInterval = setInterval(playSirenTone, 450);
 }
 
 function stopSiren() {
-  if (sirenTimer) {
-    clearInterval(sirenTimer);
-    sirenTimer = null;
+  if (sirenInterval) {
+    clearInterval(sirenInterval);
+    sirenInterval = null;
   }
 }
 
-// Chart.js Instances
-let threatChart = null;
-let barChart = null;
-const MAX_CHART_POINTS = 30;
-
-function initCharts() {
-  // 1. Spline Telemetry Activity Waveform
-  const ctxThreat = document.getElementById("threatActivityCanvas");
-  if (ctxThreat) {
-    const labels = Array(MAX_CHART_POINTS).fill("");
-    const blanks = Array(MAX_CHART_POINTS).fill(null);
-
-    threatChart = new Chart(ctxThreat, {
-      type: "line",
-      data: {
-        labels: [...labels],
-        datasets: [
-          {
-            label: "Total Magnitude",
-            data: [...blanks],
-            borderColor: "#38bdf8",
-            backgroundColor: "rgba(56, 189, 248, 0.1)",
-            borderWidth: 2.2,
-            tension: 0.4,
-            fill: true,
-            pointRadius: 0
-          },
-          {
-            label: "Lateral X",
-            data: [...blanks],
-            borderColor: "#f97316",
-            borderWidth: 1.8,
-            tension: 0.4,
-            fill: false,
-            pointRadius: 0
-          },
-          {
-            label: "Longitudinal Y",
-            data: [...blanks],
-            borderColor: "#10b981",
-            borderWidth: 1.8,
-            tension: 0.4,
-            fill: false,
-            pointRadius: 0
-          },
-          {
-            label: "Vertical Z",
-            data: [...blanks],
-            borderColor: "#818cf8",
-            borderWidth: 1.8,
-            tension: 0.4,
-            fill: false,
-            pointRadius: 0
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { display: false },
-          y: {
-            min: -15,
-            suggestedMax: 35,
-            grid: { color: "rgba(255, 255, 255, 0.05)" },
-            ticks: {
-              color: "#64748b",
-              font: { family: "'JetBrains Mono', monospace", size: 9 },
-              maxTicksLimit: 5
-            }
-          }
-        }
-      }
-    });
-  }
-
-  // 2. Incident Summary Bar Chart
-  const ctxBar = document.getElementById("incidentBarCanvas");
-  if (ctxBar) {
-    const barLabels = ["10s", "20s", "30s", "40s", "50s", "60s", "70s", "80s", "90s", "Now"];
-    const safeData = [12, 19, 14, 18, 22, 25, 20, 18, 24, 26];
-    const riskData = [0, 0, 1, 0, 0, 0, 0, 2, 0, 0];
-
-    barChart = new Chart(ctxBar, {
-      type: "bar",
-      data: {
-        labels: barLabels,
-        datasets: [
-          {
-            label: "Safe Driving",
-            data: safeData,
-            backgroundColor: "#2563eb",
-            borderRadius: 4
-          },
-          {
-            label: "Crash Spikes",
-            data: riskData,
-            backgroundColor: "#ef4444",
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { color: "#64748b", font: { size: 9 } }
-          },
-          y: {
-            grid: { color: "rgba(255, 255, 255, 0.04)" },
-            ticks: { color: "#64748b", font: { size: 9 }, maxTicksLimit: 3 }
-          }
-        }
+// -----------------------------------------------------------------------------
+// Browser Native Desktop Push Notifications
+// -----------------------------------------------------------------------------
+function requestNotificationPermission() {
+  if ("Notification" in window) {
+    Notification.requestPermission().then((permission) => {
+      state.hasRequestedNotification = true;
+      if (permission === "granted") {
+        appendSerialLog("Desktop notifications authorized.", "dispatch");
       }
     });
   }
 }
 
-function pushChartPoint(ax, ay, az, total) {
-  if (!threatChart) return;
-  const data = threatChart.data;
+function triggerDesktopNotification(peakMagnitude) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification("CRITICAL VEHICLE ACCIDENT DETECTED!", {
+        body: `Emergency Alert Dispatched to ${state.emergencyPhone}!\nPeak Impact: ${peakMagnitude.toFixed(2)} m/s²\nLocation: ${state.fixedLat}, ${state.fixedLon}\nBuzzer Active on Pin D8.`,
+        icon: "https://maps.google.com/mapfiles/kml/shapes/caution.png",
+        requireInteraction: true
+      });
+    } catch (e) {}
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Sliding In-App Emergency Notification Toast
+// -----------------------------------------------------------------------------
+function showEmergencyToast(peakMagnitude) {
+  const toast = document.getElementById("emergencyToast");
+  const toastDetails = document.getElementById("toastDetails");
+  const toastWhatsApp = document.getElementById("toastWhatsApp");
+
+  if (!toast) return;
+
+  const now = new Date().toLocaleTimeString([], { hour12: false });
+  const msg = `🚨 EMERGENCY ALERT: Accident detected at ${now}! Peak Impact: ${peakMagnitude.toFixed(2)} m/s². Location: ${state.fixedLat}, ${state.fixedLon}. Google Maps: ${state.googleMapsUrl}`;
+  const whatsappUrl = `https://api.whatsapp.com/send?phone=91${state.rawPhone}&text=${encodeURIComponent(msg)}`;
+
+  if (toastDetails) {
+    toastDetails.innerHTML = `
+      <div style="font-weight: 700; color: #fff; font-size: 0.85rem;">🚨 ACCIDENT ALERT DISPATCHED</div>
+      <div style="color: #cbd5e1; font-size: 0.78rem; margin-top: 0.2rem;">
+        Notification sent to <strong style="color: #38bdf8;">${state.emergencyPhone}</strong><br>
+        Peak Force: <strong style="color: #f87171;">${peakMagnitude.toFixed(2)} m/s²</strong><br>
+        Location: <strong style="color: #38bdf8;">${state.fixedLat}, ${state.fixedLon}</strong>
+      </div>
+    `;
+  }
+
+  if (toastWhatsApp) {
+    toastWhatsApp.href = whatsappUrl;
+  }
+
+  toast.classList.add("active");
+  setTimeout(() => {
+    toast.classList.remove("active");
+  }, 10000);
+}
+
+// -----------------------------------------------------------------------------
+// Leaflet Map Controller
+// -----------------------------------------------------------------------------
+let map = null;
+let vehicleMarker = null;
+let radarCircle = null;
+
+function initMap() {
+  const mapEl = document.getElementById("gpsMap");
+  if (!mapEl) return;
+
+  map = L.map("gpsMap", {
+    center: [state.fixedLat, state.fixedLon],
+    zoom: 15,
+    zoomControl: false,
+    attributionControl: false
+  });
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    subdomains: "abcd"
+  }).addTo(map);
+
+  const customIcon = L.divIcon({
+    className: "vehicle-pin",
+    html: `
+      <div style="background: #0284c7; width: 28px; height: 28px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 16px #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 13px;">
+        🚗
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+  });
+
+  vehicleMarker = L.marker([state.fixedLat, state.fixedLon], { icon: customIcon }).addTo(map);
+  vehicleMarker.bindPopup(`
+    <div style="font-family: var(--font-sans); color: #0f172a; font-size: 12px; line-height: 1.4;">
+      <strong>Fixed Incident Location</strong><br>
+      Lat: ${state.fixedLat}<br>
+      Lon: ${state.fixedLon}<br>
+      <a href="${state.googleMapsUrl}" target="_blank" style="color: #0284c7; font-weight: bold;">Open in Google Maps</a>
+    </div>
+  `);
+}
+
+function updateMapBeacon(isCrash) {
+  if (!map) return;
+  if (isCrash) {
+    if (!radarCircle) {
+      radarCircle = L.circle([state.fixedLat, state.fixedLon], {
+        color: "#ef4444",
+        fillColor: "#ef4444",
+        fillOpacity: 0.28,
+        radius: 90,
+        weight: 3
+      }).addTo(map);
+    }
+  } else if (radarCircle) {
+    map.removeLayer(radarCircle);
+    radarCircle = null;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Real-time Chart.js Waveform
+// -----------------------------------------------------------------------------
+let telemetryChart = null;
+const MAX_CHART_POINTS = 35;
+
+function initChart() {
+  const ctx = document.getElementById("telemetryCanvas");
+  if (!ctx) return;
+
+  const labels = Array(MAX_CHART_POINTS).fill("");
+  const blanks = Array(MAX_CHART_POINTS).fill(null);
+
+  telemetryChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [...labels],
+      datasets: [
+        {
+          label: "Total Magnitude (|a|)",
+          data: [...blanks],
+          borderColor: "#38bdf8",
+          backgroundColor: "rgba(56, 189, 248, 0.12)",
+          borderWidth: 2.4,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 0
+        },
+        {
+          label: "Lateral X",
+          data: [...blanks],
+          borderColor: "#f43f5e",
+          borderWidth: 1.8,
+          borderDash: [3, 3],
+          tension: 0.3,
+          fill: false,
+          pointRadius: 0
+        },
+        {
+          label: "Longitudinal Y",
+          data: [...blanks],
+          borderColor: "#10b981",
+          borderWidth: 1.8,
+          borderDash: [3, 3],
+          tension: 0.3,
+          fill: false,
+          pointRadius: 0
+        },
+        {
+          label: "Vertical Z",
+          data: [...blanks],
+          borderColor: "#818cf8",
+          borderWidth: 1.8,
+          borderDash: [3, 3],
+          tension: 0.3,
+          fill: false,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: {
+          position: "top",
+          labels: {
+            color: "#94a3b8",
+            font: { family: "'Inter', sans-serif", size: 11, weight: "600" },
+            usePointStyle: true,
+            boxWidth: 8
+          }
+        }
+      },
+      scales: {
+        x: { display: false },
+        y: {
+          min: -15,
+          suggestedMax: 35,
+          grid: { color: "rgba(255, 255, 255, 0.05)" },
+          ticks: {
+            color: "#64748b",
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+            callback: (v) => `${v} m/s²`
+          }
+        }
+      }
+    }
+  });
+}
+
+function pushChartData(ax, ay, az, total) {
+  if (!telemetryChart) return;
+  const data = telemetryChart.data;
   data.labels.push("");
   data.datasets[0].data.push(total);
   data.datasets[1].data.push(ax);
@@ -198,7 +297,7 @@ function pushChartPoint(ax, ay, az, total) {
     data.labels.shift();
     data.datasets.forEach((ds) => ds.data.shift());
   }
-  threatChart.update("none");
+  telemetryChart.update("none");
 }
 
 // -----------------------------------------------------------------------------
@@ -223,13 +322,13 @@ function startSSE() {
 }
 
 // -----------------------------------------------------------------------------
-// Web Serial API (Direct Browser USB Serial - Works on Vercel!)
+// Browser-Native Web Serial API (Works on Vercel deployment!)
 // -----------------------------------------------------------------------------
 let webSerialPort = null;
 
 async function connectWebSerial() {
   if (!("serial" in navigator)) {
-    alert("Web Serial is supported in Google Chrome, Microsoft Edge, and Opera.\nWhen running locally, you can use the Python backend.");
+    alert("Web Serial is supported in Google Chrome, Microsoft Edge, and Opera.\nWhen running locally, use the Python backend.");
     return;
   }
 
@@ -237,11 +336,11 @@ async function connectWebSerial() {
     webSerialPort = await navigator.serial.requestPort();
     await webSerialPort.open({ baudRate: 9600 });
     state.connected = true;
-    updateDeviceRow("arduinoStatusBadge", "Online >", "status-online");
-    appendSerialLog("Web Serial Connected to Arduino UNO @ 9600 baud.", "success");
+    updateHardwareBadge(true, "Web Serial (9600 bps)");
+    appendSerialLog("Connected via browser Web Serial API @ 9600 baud.", "dispatch");
 
     const textDecoder = new TextDecoderStream();
-    const readableStreamClosed = webSerialPort.readable.pipeTo(textDecoder.writable);
+    webSerialPort.readable.pipeTo(textDecoder.writable);
     const reader = textDecoder.readable.getReader();
 
     let buffer = "";
@@ -253,16 +352,15 @@ async function connectWebSerial() {
       buffer = lines.pop();
       for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed) processSerialRaw(trimmed);
+        if (trimmed) processRawLine(trimmed);
       }
     }
   } catch (err) {
-    console.error("Web Serial error:", err);
-    appendSerialLog(`Web Serial error: ${err.message}`, "error");
+    appendSerialLog(`Web Serial error: ${err.message}`, "alert");
   }
 }
 
-function processSerialRaw(lineStr) {
+function processRawLine(lineStr) {
   let parsed = null;
   try {
     parsed = JSON.parse(lineStr);
@@ -284,7 +382,7 @@ function processSerialRaw(lineStr) {
 }
 
 // -----------------------------------------------------------------------------
-// Unified Telemetry Handler (Handles both Backend SSE & Web Serial)
+// Unified Telemetry Handler (SSE & Web Serial)
 // -----------------------------------------------------------------------------
 function handleTelemetryUpdate(data) {
   if (!data) return;
@@ -307,7 +405,7 @@ function handleTelemetryUpdate(data) {
 
   // 2. Accident Normalization
   const rawStatus = (data.status || "").toString().trim().toUpperCase();
-  const isAccidentDetected = (
+  const isAccident = (
     rawStatus.includes("ACCIDENT") ||
     rawStatus.includes("CRASH") ||
     rawStatus.includes("EMERGENCY") ||
@@ -320,206 +418,259 @@ function handleTelemetryUpdate(data) {
   state.ay = ay;
   state.az = az;
   state.totalAccel = total;
-  state.vehicleStatus = isAccidentDetected ? "ACCIDENT DETECTED" : "NORMAL";
-  state.buzzerStatus = (isBuzzerOn || isAccidentDetected) ? "ON" : "OFF";
-  state.isAccidentActive = isAccidentDetected;
+  state.vehicleStatus = isAccident ? "ACCIDENT DETECTED" : "NORMAL";
+  state.buzzerStatus = (isBuzzerOn || isAccident) ? "ON" : "OFF";
+  state.isAccidentActive = isAccident;
 
-  // 3. Update Overview Card
-  const txtActiveThreats = document.getElementById("txtActiveThreats");
-  const systemStatusBadge = document.getElementById("systemStatusBadge");
+  // 3. Update Hardware Connection Badge
+  updateHardwareBadge(isConnected, data.port ? `${data.port} @ ${data.baudrate || 9600}` : "Connected");
 
-  if (isAccidentDetected) {
-    if (txtActiveThreats) {
-      txtActiveThreats.innerText = "1";
-      txtActiveThreats.className = "val-red";
-    }
-    if (systemStatusBadge) {
-      systemStatusBadge.innerText = "CRITICAL: ACCIDENT DETECTED >";
-      systemStatusBadge.className = "critical-pill";
-    }
-    document.body.classList.add("accident-active");
-    startSiren();
+  // 4. Vehicle Status Card
+  const statusPill = document.getElementById("vehicleStatusPill");
+  if (statusPill) {
+    if (isAccident) {
+      statusPill.className = "status-banner-box status-crash";
+      statusPill.innerHTML = `<span>🚨</span> CRITICAL: ACCIDENT DETECTED`;
+      document.body.classList.add("accident-active");
+      startSiren();
+      updateMapBeacon(true);
 
-    const radar = document.getElementById("mapRadar");
-    if (radar) radar.style.display = "block";
-  } else {
-    if (txtActiveThreats) {
-      txtActiveThreats.innerText = "0";
-      txtActiveThreats.className = "val-green";
-    }
-    if (systemStatusBadge) {
-      systemStatusBadge.innerText = isConnected ? "NORMAL (SAFE) >" : "DISCONNECTED >";
-      systemStatusBadge.className = isConnected ? "secure-pill" : "secure-pill style-offline";
-    }
-    document.body.classList.remove("accident-active");
-    stopSiren();
-
-    const radar = document.getElementById("mapRadar");
-    if (radar) radar.style.display = "none";
-  }
-
-  // 4. Update Device Status Card
-  updateDeviceRow(
-    "arduinoStatusBadge",
-    isConnected ? "Online >" : "Offline >",
-    isConnected ? "status-online" : "status-muted"
-  );
-  updateDeviceRow(
-    "sensorStatusBadge",
-    isConnected ? "Active >" : "Standby >",
-    isConnected ? (isAccidentDetected ? "status-risk" : "status-online") : "status-muted"
-  );
-  updateDeviceRow(
-    "buzzerStatusBadge",
-    (state.buzzerStatus === "ON") ? "ACTIVE (SOUNDING) >" : "OFF (Silent) >",
-    (state.buzzerStatus === "ON") ? "status-risk" : "status-muted"
-  );
-
-  // 5. Update Donut Meter (G-Force & Risk %)
-  const riskPct = Math.min(100, Math.max(8, Math.round((total / 28.0) * 100)));
-  const donutVal = document.getElementById("donutPct");
-  const donutLabel = document.getElementById("donutLabel");
-  const donutCircle = document.getElementById("donutCircle");
-
-  if (donutVal) donutVal.innerText = `${riskPct}%`;
-  if (donutLabel) {
-    if (isAccidentDetected || riskPct >= 70) {
-      donutLabel.innerText = "Critical Crash";
-      donutLabel.style.color = "var(--color-critical)";
-    } else if (riskPct >= 45) {
-      donutLabel.innerText = "High G-Force";
-      donutLabel.style.color = "var(--color-high)";
+      // Trigger multi-channel alert notification
+      showEmergencyToast(total);
+      triggerDesktopNotification(total);
     } else {
-      donutLabel.innerText = "Normal Safe";
-      donutLabel.style.color = "var(--color-secure)";
+      statusPill.className = "status-banner-box status-safe";
+      statusPill.innerHTML = `<span>🛡️</span> NORMAL OPERATION (SAFE)`;
+      document.body.classList.remove("accident-active");
+      stopSiren();
+      updateMapBeacon(false);
     }
   }
 
-  if (donutCircle) {
-    const offset = 251.2 - (251.2 * riskPct) / 100;
-    donutCircle.style.strokeDashoffset = offset;
-    donutCircle.style.stroke = isAccidentDetected ? "#ef4444" : (riskPct > 50 ? "#f97316" : "#10b981");
+  // 5. Buzzer State Card
+  const buzzerBadge = document.getElementById("buzzerBadge");
+  if (buzzerBadge) {
+    if (state.buzzerStatus === "ON") {
+      buzzerBadge.className = "buzzer-badge buzzer-active";
+      buzzerBadge.innerHTML = `<span style="font-size: 11px;">🔊</span> ACTIVE (SOUNDING)`;
+    } else {
+      buzzerBadge.className = "buzzer-badge buzzer-silent";
+      buzzerBadge.innerHTML = `<span style="font-size: 11px;">🔇</span> INACTIVE (OFF)`;
+    }
   }
 
-  // 6. Push to Waveform Chart
-  pushChartPoint(ax, ay, az, total);
+  // 6. Total Acceleration & Dynamic Progress Bar
+  const valTotal = document.getElementById("valTotalAccel");
+  const fillProgress = document.getElementById("fillProgressTotal");
+  const txtGForce = document.getElementById("txtGForce");
+  if (valTotal) valTotal.innerText = total.toFixed(2);
+  if (txtGForce) txtGForce.innerText = `${(total / 9.80665).toFixed(2)} g`;
+  if (fillProgress) {
+    const pct = Math.min(100, Math.max(0, (total / 32.0) * 100));
+    fillProgress.style.width = `${pct}%`;
+  }
 
-  // 7. Update Serial Feed
+  // 7. 3-Axis Accelerometer Progress
+  const valAx = document.getElementById("valAx");
+  const valAy = document.getElementById("valAy");
+  const valAz = document.getElementById("valAz");
+  const barAx = document.getElementById("barAx");
+  const barAy = document.getElementById("barAy");
+  const barAz = document.getElementById("barAz");
+
+  if (valAx) valAx.innerText = `${ax.toFixed(2)} m/s²`;
+  if (valAy) valAy.innerText = `${ay.toFixed(2)} m/s²`;
+  if (valAz) valAz.innerText = `${az.toFixed(2)} m/s²`;
+
+  const normBar = (v) => Math.min(100, Math.max(0, ((v + 20) / 40) * 100));
+  if (barAx) barAx.style.width = `${normBar(ax)}%`;
+  if (barAy) barAy.style.width = `${normBar(ay)}%`;
+  if (barAz) barAz.style.width = `${normBar(az)}%`;
+
+  // 8. 3D Tilt Bubble
+  const tiltDot = document.getElementById("tiltDot");
+  const txtTilt = document.getElementById("txtTiltAngles");
+  if (tiltDot) {
+    const bx = Math.min(18, Math.max(-18, (ax / 12) * 18));
+    const by = Math.min(18, Math.max(-18, (ay / 12) * 18));
+    tiltDot.style.transform = `translate(${bx}px, ${by}px)`;
+  }
+  if (txtTilt) {
+    const pitch = Math.round(Math.atan2(ax, Math.sqrt(ay * ay + az * az)) * (180 / Math.PI));
+    const roll = Math.round(Math.atan2(ay, az) * (180 / Math.PI));
+    txtTilt.innerText = `Pitch: ${pitch}° | Roll: ${roll}°`;
+  }
+
+  // 9. Push to Real-time Chart
+  pushChartData(ax, ay, az, total);
+
+  // 10. Append to Live Serial Monitor
   if (data.raw && !state.serialPaused) {
-    appendSerialLog(data.raw, isAccidentDetected ? "alert" : "normal");
+    appendSerialLog(data.raw, isAccident ? "alert" : "normal");
   } else if (data.logs && Array.isArray(data.logs)) {
-    renderBackendLogs(data.logs);
+    const latest = data.logs[data.logs.length - 1];
+    if (latest && latest.text) appendSerialLog(latest.text, latest.type);
+  }
+
+  // 11. Refresh alert history table on accident
+  if (isAccident) {
+    fetchAlertHistory();
   }
 }
 
-function updateDeviceRow(elemId, text, className) {
-  const el = document.getElementById(elemId);
-  if (el) {
-    el.innerText = text;
-    el.className = `device-status-badge ${className}`;
+function updateHardwareBadge(isConnected, label) {
+  const badge = document.getElementById("hardwareLinkBadge");
+  if (!badge) return;
+  if (isConnected) {
+    badge.className = "btn btn-glass";
+    badge.innerHTML = `<span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span> ${label}`;
+  } else {
+    badge.className = "btn btn-glass";
+    badge.innerHTML = `<span style="width: 8px; height: 8px; border-radius: 50%; background: #64748b;"></span> Disconnected`;
   }
 }
 
 // -----------------------------------------------------------------------------
-// User-Friendly Serial Monitor Feed
+// Live Serial Monitor Feed
 // -----------------------------------------------------------------------------
-function appendSerialLog(text, type = "normal") {
-  const container = document.getElementById("serialFeedContainer");
-  if (!container || state.serialPaused) return;
+function appendSerialLog(text, logType = "normal") {
+  const consoleEl = document.getElementById("serialConsole");
+  if (!consoleEl || state.serialPaused) return;
 
   const now = new Date().toLocaleTimeString([], { hour12: false });
-  const item = document.createElement("div");
-  item.className = `feed-item ${type === "alert" ? "alert-feed" : ""}`;
+  const entry = document.createElement("div");
+  entry.className = `log-entry ${logType}`;
 
   let icon = "⚡";
-  let color = "var(--text-main)";
-  if (type === "alert") {
-    icon = "🚨";
-    color = "var(--color-critical)";
-  } else if (type === "success") {
-    icon = "✅";
-    color = "var(--color-secure)";
-  } else if (type === "error") {
-    icon = "❌";
-    color = "var(--color-critical)";
-  }
+  if (logType === "alert") icon = "🚨";
+  else if (logType === "dispatch") icon = "📲";
 
-  item.innerHTML = `
-    <div class="feed-left">
-      <span>${icon}</span>
-      <span style="color: ${color};">${text}</span>
-    </div>
-    <span class="feed-time">${now}</span>
+  entry.innerHTML = `
+    <span style="color: var(--text-dim); font-size: 0.72rem;">[${now}]</span>
+    <span>${icon}</span>
+    <span>${text}</span>
   `;
 
-  container.prepend(item);
+  consoleEl.prepend(entry);
 
-  if (container.children.length > 40) {
-    container.removeChild(container.lastChild);
+  if (consoleEl.children.length > 50) {
+    consoleEl.removeChild(consoleEl.lastChild);
   }
 }
 
-function renderBackendLogs(logs) {
-  const container = document.getElementById("serialFeedContainer");
-  if (!container || state.serialPaused || logs.length === 0) return;
-  const latest = logs[logs.length - 1];
-  if (latest && latest.text) {
-    appendSerialLog(latest.text, latest.type);
+// -----------------------------------------------------------------------------
+// Accident Alert History Table
+// -----------------------------------------------------------------------------
+async function fetchAlertHistory() {
+  try {
+    const res = await fetch("/api/alerts");
+    const json = await res.json();
+    if (json.success) {
+      renderAlertsTable(json.alerts || []);
+    }
+  } catch (e) {}
+}
+
+function renderAlertsTable(alerts) {
+  const tbody = document.getElementById("alertsTableBody");
+  const countBadge = document.getElementById("alertsCountBadge");
+  if (!tbody) return;
+
+  if (countBadge) countBadge.innerText = `${alerts.length} Incidents`;
+
+  if (alerts.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">
+          No accidents recorded. Vehicle is operating safely.
+        </td>
+      </tr>
+    `;
+    return;
   }
+
+  let html = "";
+  alerts.forEach((alert) => {
+    html += `
+      <tr>
+        <td style="font-family: var(--font-mono); font-weight: 700; color: #38bdf8;">#${alert.id}</td>
+        <td style="font-family: var(--font-mono); color: var(--text-muted);">${alert.timestamp}</td>
+        <td>
+          <span style="font-family: var(--font-mono); font-weight: 700; color: #f87171;">
+            ${alert.peak_magnitude.toFixed(2)} m/s²
+          </span>
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">
+          X:${alert.ax} Y:${alert.ay} Z:${alert.az}
+        </td>
+        <td>
+          <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 4px;">
+            ${alert.sms_recipient || "+919265843734"} [SENT]
+          </span>
+        </td>
+        <td>
+          <span style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 4px;">
+            CRASH
+          </span>
+        </td>
+        <td>
+          <a href="${alert.google_maps_url}" target="_blank" class="btn btn-glass" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;">
+            🗺️ Google Maps
+          </a>
+        </td>
+      </tr>
+    `;
+  });
+  tbody.innerHTML = html;
 }
 
 // -----------------------------------------------------------------------------
 // UI Event Handlers & Initialization
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
-  initCharts();
+  initMap();
+  initChart();
   startSSE();
+  fetchAlertHistory();
 
-  document.querySelectorAll(".nav-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".nav-tab").forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-    });
-  });
+  // Request Desktop Notification on first click
+  document.body.addEventListener("click", () => {
+    if (!state.hasRequestedNotification && "Notification" in window && Notification.permission === "default") {
+      requestNotificationPermission();
+    }
+  }, { once: true });
 
-  const soundBell = document.getElementById("soundToggleBell");
-  if (soundBell) {
-    soundBell.addEventListener("click", () => {
+  // Live Clock
+  const clockEl = document.getElementById("liveClock");
+  if (clockEl) {
+    setInterval(() => {
+      clockEl.innerText = new Date().toLocaleTimeString([], { hour12: false });
+    }, 1000);
+  }
+
+  // Audio Mute Toggle
+  const btnSound = document.getElementById("btnToggleSound");
+  if (btnSound) {
+    btnSound.addEventListener("click", () => {
       state.audioMuted = !state.audioMuted;
       initAudio();
-      soundBell.title = state.audioMuted ? "Alarm Siren Muted" : "Alarm Siren Active";
-      appendSerialLog(`Alarm Siren ${state.audioMuted ? "MUTED" : "UNMUTED"}`, "normal");
+      btnSound.innerHTML = state.audioMuted ? "🔇 Siren: Muted" : "🔊 Siren: Active";
+      if (state.audioMuted) stopSiren();
+      else if (state.isAccidentActive) startSiren();
     });
   }
 
-  const scanBtn = document.getElementById("btnScanNow");
-  const modal = document.getElementById("cyberModal");
-  const closeModal = document.getElementById("closeCyberModal");
-
-  if (scanBtn && modal) {
-    scanBtn.addEventListener("click", () => modal.classList.add("active"));
-  }
-  if (closeModal && modal) {
-    closeModal.addEventListener("click", () => modal.classList.remove("active"));
-  }
-
-  const btnWebSerial = document.getElementById("btnConnectWebSerial");
-  if (btnWebSerial) {
-    btnWebSerial.addEventListener("click", () => {
-      connectWebSerial();
-      if (modal) modal.classList.remove("active");
-    });
-  }
-
-  const btnClearLogs = document.getElementById("btnClearSerialLogs");
+  // Clear Serial Logs
+  const btnClearLogs = document.getElementById("btnClearLogs");
   if (btnClearLogs) {
     btnClearLogs.addEventListener("click", () => {
-      const container = document.getElementById("serialFeedContainer");
-      if (container) container.innerHTML = "";
+      const consoleEl = document.getElementById("serialConsole");
+      if (consoleEl) consoleEl.innerHTML = "";
     });
   }
 
-  const btnPauseLogs = document.getElementById("btnPauseSerialLogs");
+  // Pause / Resume Serial Stream
+  const btnPauseLogs = document.getElementById("btnPauseLogs");
   if (btnPauseLogs) {
     btnPauseLogs.addEventListener("click", () => {
       state.serialPaused = !state.serialPaused;
@@ -527,10 +678,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Demo Trigger (Testing Crash Impact)
-  const btnSimCrash = document.getElementById("btnSimCrash");
-  if (btnSimCrash) {
-    btnSimCrash.addEventListener("click", () => {
+  // Test Collision Crash Impact (Demo Simulation Button)
+  const btnTestCrash = document.getElementById("btnTestCrash");
+  if (btnTestCrash) {
+    btnTestCrash.addEventListener("click", () => {
       handleTelemetryUpdate({
         connected: true,
         ax: 26.4,
@@ -541,12 +692,14 @@ document.addEventListener("DOMContentLoaded", () => {
         buzzer: "ON",
         raw: '{"ax":26.40,"ay":14.80,"az":8.20,"total":31.38,"status":"ACCIDENT DETECTED","buzzer":"ON"}'
       });
+      appendSerialLog("TEST CRASH IMPACT TRIGGERED! Dispatching emergency notifications...", "alert");
     });
   }
 
-  const btnSimReset = document.getElementById("btnSimReset");
-  if (btnSimReset) {
-    btnSimReset.addEventListener("click", () => {
+  // Reset to Safe Driving
+  const btnResetSafe = document.getElementById("btnResetSafe");
+  if (btnResetSafe) {
+    btnResetSafe.addEventListener("click", () => {
       handleTelemetryUpdate({
         connected: true,
         ax: 0.12,
@@ -557,6 +710,73 @@ document.addEventListener("DOMContentLoaded", () => {
         buzzer: "OFF",
         raw: '{"ax":0.12,"ay":-0.05,"az":9.81,"total":9.81,"status":"NORMAL","buzzer":"OFF"}'
       });
+      appendSerialLog("Vehicle operating in NORMAL (SAFE) condition.", "normal");
+    });
+  }
+
+  // Test Notification Dispatch Button
+  const btnTestNotification = document.getElementById("btnTestNotification");
+  if (btnTestNotification) {
+    btnTestNotification.addEventListener("click", async () => {
+      showEmergencyToast(27.4);
+      triggerDesktopNotification(27.4);
+      appendSerialLog(`Manual Emergency Notification dispatched to ${state.emergencyPhone}`, "dispatch");
+      try {
+        await fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ peak: 27.4 })
+        });
+        fetchAlertHistory();
+      } catch (e) {}
+    });
+  }
+
+  // Copy GPS Coordinates
+  const btnCopyCoords = document.getElementById("btnCopyCoords");
+  if (btnCopyCoords) {
+    btnCopyCoords.addEventListener("click", () => {
+      navigator.clipboard.writeText(`${state.fixedLat}, ${state.fixedLon}`).then(() => {
+        const orig = btnCopyCoords.innerHTML;
+        btnCopyCoords.innerHTML = "✅ Copied!";
+        setTimeout(() => btnCopyCoords.innerHTML = orig, 1800);
+      });
+    });
+  }
+
+  // Export CSV
+  const btnExportCsv = document.getElementById("btnExportCsv");
+  if (btnExportCsv) {
+    btnExportCsv.addEventListener("click", () => {
+      window.location.href = "/api/alerts/export";
+    });
+  }
+
+  // Clear Alert History
+  const btnClearHistory = document.getElementById("btnClearHistory");
+  if (btnClearHistory) {
+    btnClearHistory.addEventListener("click", async () => {
+      if (confirm("Clear all recorded accident logs?")) {
+        await fetch("/api/alerts", { method: "DELETE" });
+        fetchAlertHistory();
+      }
+    });
+  }
+
+  // Modal Settings
+  const btnOpenModal = document.getElementById("btnOpenSettings");
+  const modal = document.getElementById("settingsModal");
+  const btnCloseModal = document.getElementById("btnCloseModal");
+  const btnWebSerial = document.getElementById("btnWebSerial");
+
+  if (btnOpenModal && modal) btnOpenModal.addEventListener("click", () => modal.classList.add("active"));
+  if (btnCloseModal && modal) btnCloseModal.addEventListener("click", () => modal.classList.remove("active"));
+  if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("active"); });
+
+  if (btnWebSerial) {
+    btnWebSerial.addEventListener("click", () => {
+      connectWebSerial();
+      if (modal) modal.classList.remove("active");
     });
   }
 });

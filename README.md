@@ -77,3 +77,4 @@ Because this dashboard includes browser-native **Web Serial API** support (`navi
 2. In [Vercel](https://vercel.com), click **Add New... > Project** and import `iot-accident-alert-system`.
 3. Vercel automatically detects `vercel.json` with the output directory `frontend`. Click **Deploy**.
 4. Open the deployed Vercel link, click **Connect Arduino**, select your Arduino UNO COM port, and stream live hardware telemetry!
+

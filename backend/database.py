@@ -1,5 +1,5 @@
 """
-Database management for Accident History Logging
+Database management for Accident History Logging & SMS Dispatch Tracking
 """
 
 import sqlite3
@@ -25,12 +25,14 @@ def init_db():
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
                 status TEXT NOT NULL,
-                google_maps_url TEXT NOT NULL
+                google_maps_url TEXT NOT NULL,
+                sms_recipient TEXT DEFAULT '+919265843734',
+                sms_status TEXT DEFAULT 'SENT'
             )
         """)
         conn.commit()
 
-def log_accident(peak_magnitude, ax, ay, az, lat=FIXED_LATITUDE, lon=FIXED_LONGITUDE):
+def log_accident(peak_magnitude, ax, ay, az, lat=FIXED_LATITUDE, lon=FIXED_LONGITUDE, recipient="+919265843734", sms_status="SENT"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     maps_url = f"https://www.google.com/maps?q={lat},{lon}"
     
@@ -38,10 +40,10 @@ def log_accident(peak_magnitude, ax, ay, az, lat=FIXED_LATITUDE, lon=FIXED_LONGI
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO accident_alerts 
-            (timestamp, peak_magnitude, ax, ay, az, latitude, longitude, status, google_maps_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (timestamp, peak_magnitude, ax, ay, az, latitude, longitude, status, google_maps_url, sms_recipient, sms_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (timestamp, round(float(peak_magnitude), 2), round(float(ax), 2), 
-              round(float(ay), 2), round(float(az), 2), lat, lon, "ACCIDENT DETECTED", maps_url))
+              round(float(ay), 2), round(float(az), 2), lat, lon, "ACCIDENT DETECTED", maps_url, recipient, sms_status))
         conn.commit()
         alert_id = cursor.lastrowid
         
@@ -55,14 +57,16 @@ def log_accident(peak_magnitude, ax, ay, az, lat=FIXED_LATITUDE, lon=FIXED_LONGI
         "latitude": lat,
         "longitude": lon,
         "status": "ACCIDENT DETECTED",
-        "google_maps_url": maps_url
+        "google_maps_url": maps_url,
+        "sms_recipient": recipient,
+        "sms_status": sms_status
     }
 
 def get_alerts(limit=50):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, timestamp, peak_magnitude, ax, ay, az, latitude, longitude, status, google_maps_url
+            SELECT id, timestamp, peak_magnitude, ax, ay, az, latitude, longitude, status, google_maps_url, sms_recipient, sms_status
             FROM accident_alerts
             ORDER BY id DESC
             LIMIT ?

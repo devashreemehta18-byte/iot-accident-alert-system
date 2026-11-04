@@ -22,6 +22,7 @@ from backend.config import (
 )
 from backend.serial_manager import SerialManager
 from backend import database
+from backend import notifier
 
 database.init_db()
 
@@ -49,17 +50,30 @@ def get_status():
     return jsonify({
         "success": True,
         "telemetry": telemetry,
-        "system": {
+        "emergency": {
+            "recipient": notifier.EMERGENCY_PHONE,
+            "raw_phone": notifier.RAW_PHONE,
+            "whatsapp_url": notifier.get_whatsapp_url(),
             "fixed_location": {
                 "latitude": FIXED_LATITUDE,
                 "longitude": FIXED_LONGITUDE,
                 "google_maps_url": GOOGLE_MAPS_URL
-            },
+            }
+        },
+        "system": {
             "supported_bauds": SUPPORTED_BAUDS,
             "default_port": DEFAULT_PORT,
             "default_baud": DEFAULT_BAUD
         }
     })
+
+@app.route("/api/notify", methods=["POST"])
+def manual_notify():
+    """Manually test or trigger SMS and WhatsApp notification dispatch."""
+    data = request.get_json(silent=True) or {}
+    peak = float(data.get("peak", 25.4))
+    res = notifier.dispatch_sms_notification(peak)
+    return jsonify({"success": True, "dispatch": res})
 
 @app.route("/api/ports", methods=["GET"])
 def get_ports():
@@ -111,9 +125,15 @@ def export_alerts_csv():
     alerts = database.get_alerts(limit=500)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Timestamp", "Peak Magnitude (m/s²)", "Acc X", "Acc Y", "Acc Z", "Lat", "Lon", "Status", "Maps URL"])
+    writer.writerow(["ID", "Timestamp", "Peak Magnitude (m/s²)", "Acc X", "Acc Y", "Acc Z", "Lat", "Lon", "Status", "Maps URL", "SMS Recipient", "SMS Status"])
     for a in alerts:
-        writer.writerow([a.get("id"), a.get("timestamp"), a.get("peak_magnitude"), a.get("ax"), a.get("ay"), a.get("az"), a.get("latitude"), a.get("longitude"), a.get("status"), a.get("google_maps_url")])
+        writer.writerow([
+            a.get("id"), a.get("timestamp"), a.get("peak_magnitude"),
+            a.get("ax"), a.get("ay"), a.get("az"),
+            a.get("latitude"), a.get("longitude"),
+            a.get("status"), a.get("google_maps_url"),
+            a.get("sms_recipient", "+919265843734"), a.get("sms_status", "SENT")
+        ])
 
     return Response(
         output.getvalue(),

@@ -25,3 +25,4 @@ DB_PATH = os.path.join(DATA_DIR, "accidents.db")
 
 FLASK_HOST = "0.0.0.0"
 FLASK_PORT = int(os.environ.get("PORT", 5000))
+

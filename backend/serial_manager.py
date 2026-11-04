@@ -1,6 +1,7 @@
 """
 Serial Manager for Arduino UNO USB Communication
 Handles PySerial reading, universal telemetry parsing, auto-reconnect, and SSE broadcasting.
+Integrates automated emergency notification dispatch to +91 9265843734.
 """
 
 import time
@@ -21,6 +22,7 @@ from backend.config import (
     GOOGLE_MAPS_URL
 )
 from backend import database
+from backend import notifier
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("SerialManager")
@@ -50,6 +52,8 @@ class SerialManager:
             "lat": FIXED_LATITUDE,
             "lon": FIXED_LONGITUDE,
             "maps_url": GOOGLE_MAPS_URL,
+            "emergency_phone": notifier.EMERGENCY_PHONE,
+            "latest_notification": None,
             "packet_count": 0,
             "last_packet_time": None,
             "last_error": None,
@@ -262,7 +266,6 @@ class SerialManager:
             is_accident_active = any(w in clean_s for w in ["ACCIDENT", "CRASH", "EMERGENCY", "IMPACT"])
 
         # 3. Hardware Safety Threshold Fallback:
-        # If total acceleration >= 17.5 m/s^2 or buzzer is active, trigger and latch accident alert!
         if total >= 17.5 or abs(ax) >= 14.0 or abs(ay) >= 14.0 or is_buzzer_active:
             is_accident_active = True
             is_buzzer_active = True
@@ -288,35 +291,55 @@ class SerialManager:
             self.telemetry["lat"] = FIXED_LATITUDE
             self.telemetry["lon"] = FIXED_LONGITUDE
             self.telemetry["maps_url"] = GOOGLE_MAPS_URL
+            self.telemetry["emergency_phone"] = notifier.EMERGENCY_PHONE
             self.telemetry["packet_count"] += 1
             self.telemetry["last_packet_time"] = timestamp_str
             self.telemetry["raw"] = line_str
             self.telemetry["mode"] = "HARDWARE"
 
+            # Check for Accident Rising Edge Trigger
             if status == "ACCIDENT DETECTED":
                 if total > self.peak_in_current_alert:
                     self.peak_in_current_alert = total
 
                 if self.last_status != "ACCIDENT DETECTED":
                     logger.warning(f"CRITICAL ACCIDENT: {total:.2f} m/s^2 | Buzzer: {buzzer}")
+                    
+                    # 1. Trigger automated notification to +91 9265843734
+                    dispatch_info = notifier.dispatch_sms_notification(total, ax, ay, az)
+                    self.telemetry["latest_notification"] = dispatch_info
+
+                    # 2. Log incident to SQLite database
                     try:
-                        database.log_accident(total, ax, ay, az, FIXED_LATITUDE, FIXED_LONGITUDE)
+                        database.log_accident(
+                            peak_magnitude=total,
+                            ax=ax,
+                            ay=ay,
+                            az=az,
+                            lat=FIXED_LATITUDE,
+                            lon=FIXED_LONGITUDE,
+                            recipient=notifier.EMERGENCY_PHONE,
+                            sms_status="SENT"
+                        )
                     except Exception as db_err:
                         logger.error(f"Database logging failed: {db_err}")
 
-                    self._append_log(f"CRITICAL ACCIDENT: {total:.2f} m/s^2 | Pin D8 Buzzer: ON", "alert")
+                    # 3. Log event to live serial feed
+                    self._append_log(
+                        f"CRITICAL COLLISION: {total:.2f} m/s² | Buzzer Pin D8: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}",
+                        "alert"
+                    )
             else:
                 self.peak_in_current_alert = 0.0
 
             self.last_status = status
 
         if self.telemetry["packet_count"] % 10 == 0 and status == "NORMAL":
-            self._append_log(f"X:{ax:.2f} | Y:{ay:.2f} | Z:{az:.2f} | Total:{total:.2f} m/s^2 | Buzzer:{buzzer}", "normal")
+            self._append_log(f"X:{ax:.2f} | Y:{ay:.2f} | Z:{az:.2f} | Total:{total:.2f} m/s² | Buzzer:{buzzer}", "normal")
 
         self._broadcast(self.get_telemetry())
 
     def _universal_parse(self, line_str):
-        # 1. JSON parse
         try:
             data = json.loads(line_str)
             if isinstance(data, dict):
@@ -332,7 +355,6 @@ class SerialManager:
         except (json.JSONDecodeError, ValueError):
             pass
 
-        # 2. Text / regex fallback
         status = "NORMAL"
         buzzer = "OFF"
         upper_line = line_str.upper()
@@ -464,15 +486,18 @@ class SerialManager:
                 self.telemetry["total"] = round(total, 2)
                 self.telemetry["status"] = status
                 self.telemetry["buzzer"] = buzzer
+                self.telemetry["emergency_phone"] = notifier.EMERGENCY_PHONE
                 self.telemetry["packet_count"] += 1
                 self.telemetry["last_packet_time"] = now_str
                 self.telemetry["mode"] = "SIMULATION"
 
                 if status == "ACCIDENT DETECTED" and self.last_status != "ACCIDENT DETECTED":
-                    database.log_accident(total, base_ax, base_ay, base_az)
-                    self._append_log(f"SIMULATION CRASH DETECTED: {total:.2f} m/s^2 | Buzzer: ON", "alert")
+                    dispatch_info = notifier.dispatch_sms_notification(total, base_ax, base_ay, base_az)
+                    self.telemetry["latest_notification"] = dispatch_info
+                    database.log_accident(total, base_ax, base_ay, base_az, recipient=notifier.EMERGENCY_PHONE, sms_status="SENT")
+                    self._append_log(f"SIMULATION CRASH: {total:.2f} m/s² | Buzzer: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}", "alert")
                 elif step % 15 == 0:
-                    self._append_log(f"X:{base_ax:.2f} | Y:{base_ay:.2f} | Z:{base_az:.2f} | Total:{total:.2f} m/s^2 | Buzzer: OFF", "normal")
+                    self._append_log(f"X:{base_ax:.2f} | Y:{base_ay:.2f} | Z:{base_az:.2f} | Total:{total:.2f} m/s² | Buzzer: OFF", "normal")
 
                 self.last_status = status
 
