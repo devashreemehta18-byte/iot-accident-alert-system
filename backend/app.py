@@ -109,6 +109,17 @@ def disconnect_port():
     serial_mgr.disconnect()
     return jsonify({"success": True, "message": "Disconnected safely.", "connected": False})
 
+@app.route("/api/send", methods=["POST"])
+def send_serial():
+    data = request.get_json(silent=True) or {}
+    message = data.get("message", "")
+    line_ending = data.get("line_ending", "\n")
+    if not message and line_ending == "":
+        return jsonify({"success": False, "message": "Empty message."}), 400
+    
+    success, msg = serial_mgr.send_data(message + line_ending)
+    return jsonify({"success": success, "message": msg})
+
 @app.route("/api/alerts", methods=["GET"])
 def get_alerts():
     limit = request.args.get("limit", 50, type=int)

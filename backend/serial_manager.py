@@ -1,6 +1,6 @@
 """
 Serial Manager for Arduino UNO USB Communication
-Handles PySerial reading, universal telemetry parsing, auto-reconnect, and SSE broadcasting.
+Handles PySerial reading, writing, universal telemetry parsing, auto-reconnect, and SSE broadcasting.
 Integrates automated emergency notification dispatch to +91 9265843734.
 """
 
@@ -68,8 +68,9 @@ class SerialManager:
         self.peak_in_current_alert = 0.0
         self.accident_latched_until = 0.0
 
+        # Exact IDE-style Serial Monitor logs buffer
         self.serial_logs = []
-        self.max_logs = 60
+        self.max_logs = 100
 
         self.simulation_active = False
         self.sim_thread = None
@@ -127,9 +128,21 @@ class SerialManager:
             self.telemetry["buzzer"] = "OFF"
             self.telemetry["last_error"] = "Manually disconnected"
             self.telemetry["mode"] = "HARDWARE"
-        self._append_log("Port disconnected by user request.", "system")
+        self._append_log("--- Serial port disconnected ---", "system")
         self._broadcast(self.get_telemetry())
         return True
+
+    def send_data(self, message):
+        """Sends data string to Arduino (Serial Monitor Send Feature)."""
+        with self.lock:
+            if self.ser and self.ser.is_open:
+                try:
+                    self.ser.write(message.encode("utf-8"))
+                    self._append_log(f">> {message.strip()}", "send")
+                    return True, "Data sent to Arduino"
+                except Exception as e:
+                    return False, f"Failed to send: {e}"
+            return False, "Serial port not connected"
 
     def _close_serial(self):
         if self.ser:
@@ -143,7 +156,7 @@ class SerialManager:
 
     def _try_open_port(self):
         try:
-            logger.info(f"Connecting to {self.port} @ {self.baudrate} baud...")
+            logger.info(f"Opening {self.port} @ {self.baudrate} baud...")
             self.ser = serial.Serial(
                 port=self.port,
                 baudrate=self.baudrate,
@@ -163,24 +176,28 @@ class SerialManager:
                 self.telemetry["last_error"] = None
                 self.telemetry["mode"] = "HARDWARE"
 
-            msg = f"Connected to {self.port} @ {self.baudrate} baud."
+            msg = f"Connected to {self.port} at {self.baudrate} baud."
             logger.info(msg)
-            self._append_log(msg, "success")
+            self._append_log(f"--- {msg} ---", "success")
             self._broadcast(self.get_telemetry())
             return True, msg
         except (serial.SerialException, OSError) as e:
             err_msg = str(e)
-            logger.warning(f"Could not open {self.port}: {err_msg}")
+            hint = ""
+            if "Access is denied" in err_msg or "PermissionError" in err_msg:
+                hint = " (Port busy: Please close Arduino IDE Serial Monitor window, then click Retry)"
+            full_err = err_msg + hint
+            logger.warning(f"Could not open {self.port}: {full_err}")
             self._close_serial()
             with self.lock:
                 self.telemetry["connected"] = False
                 self.telemetry["status"] = "DISCONNECTED"
                 self.telemetry["buzzer"] = "OFF"
-                self.telemetry["last_error"] = err_msg
+                self.telemetry["last_error"] = full_err
                 self.telemetry["mode"] = "HARDWARE"
-            self._append_log(f"Connection failed ({self.port}): {err_msg}", "error")
+            self._append_log(f"Connection failed on {self.port}: {full_err}", "error")
             self._broadcast(self.get_telemetry())
-            return False, err_msg
+            return False, full_err
 
     def _worker_loop(self):
         while not self.stop_event.is_set():
@@ -188,20 +205,19 @@ class SerialManager:
                 if self.auto_reconnect and not self.simulation_active:
                     ports = self.list_ports()
                     available_names = [p["port"] for p in ports]
+                    # Prioritize detected Arduino Uno
+                    recommended = [p["port"] for p in ports if p["is_recommended"]]
+                    if recommended and recommended[0] != self.port:
+                        self.port = recommended[0]
                     if self.port in available_names:
                         self._try_open_port()
-                    else:
-                        recommended = [p["port"] for p in ports if p["is_recommended"]]
-                        if recommended:
-                            self.port = recommended[0]
-                            self._try_open_port()
 
                 time.sleep(2.0)
                 continue
 
             try:
                 if not self.ser or not self.ser.is_open:
-                    raise serial.SerialException("Serial port is closed.")
+                    raise serial.SerialException("Serial port closed.")
 
                 line = self.ser.readline()
                 if not line:
@@ -222,7 +238,7 @@ class SerialManager:
                     self.telemetry["buzzer"] = "OFF"
                     self.telemetry["last_error"] = f"Connection lost: {str(e)}"
                     self.telemetry["mode"] = "HARDWARE"
-                self._append_log(f"Hardware disconnected on {self.port}.", "error")
+                self._append_log(f"--- Hardware disconnected on {self.port} ---", "error")
                 self._broadcast(self.get_telemetry())
                 time.sleep(1.5)
             except Exception as e:
@@ -236,6 +252,7 @@ class SerialManager:
 
         parsed_data = self._universal_parse(line_str)
         if not parsed_data:
+            self._append_log(line_str, "raw")
             return
 
         ax = parsed_data.get("ax", 0.0)
@@ -297,19 +314,14 @@ class SerialManager:
             self.telemetry["raw"] = line_str
             self.telemetry["mode"] = "HARDWARE"
 
-            # Check for Accident Rising Edge Trigger
             if status == "ACCIDENT DETECTED":
                 if total > self.peak_in_current_alert:
                     self.peak_in_current_alert = total
 
                 if self.last_status != "ACCIDENT DETECTED":
                     logger.warning(f"CRITICAL ACCIDENT: {total:.2f} m/s^2 | Buzzer: {buzzer}")
-                    
-                    # 1. Trigger automated notification to +91 9265843734
                     dispatch_info = notifier.dispatch_sms_notification(total, ax, ay, az)
                     self.telemetry["latest_notification"] = dispatch_info
-
-                    # 2. Log incident to SQLite database
                     try:
                         database.log_accident(
                             peak_magnitude=total,
@@ -324,9 +336,8 @@ class SerialManager:
                     except Exception as db_err:
                         logger.error(f"Database logging failed: {db_err}")
 
-                    # 3. Log event to live serial feed
                     self._append_log(
-                        f"CRITICAL COLLISION: {total:.2f} m/s² | Buzzer Pin D8: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}",
+                        f"🚨 CRITICAL ACCIDENT! Total: {total:.2f} m/s² | Buzzer Pin D8: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}",
                         "alert"
                     )
             else:
@@ -334,9 +345,8 @@ class SerialManager:
 
             self.last_status = status
 
-        if self.telemetry["packet_count"] % 10 == 0 and status == "NORMAL":
-            self._append_log(f"X:{ax:.2f} | Y:{ay:.2f} | Z:{az:.2f} | Total:{total:.2f} m/s² | Buzzer:{buzzer}", "normal")
-
+        # Log exact raw packet into serial monitor like IDE
+        self._append_log(line_str, "alert" if status == "ACCIDENT DETECTED" else "raw")
         self._broadcast(self.get_telemetry())
 
     def _universal_parse(self, line_str):
@@ -378,8 +388,8 @@ class SerialManager:
 
         return None
 
-    def _append_log(self, text, log_type="normal"):
-        timestamp = datetime.now().strftime("%H:%M:%S")
+    def _append_log(self, text, log_type="raw"):
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         with self.lock:
             self.serial_logs.append({"time": timestamp, "text": text, "type": log_type})
             if len(self.serial_logs) > self.max_logs:
@@ -388,7 +398,7 @@ class SerialManager:
     def get_telemetry(self):
         with self.lock:
             data = dict(self.telemetry)
-            data["logs"] = list(self.serial_logs[-15:])
+            data["logs"] = list(self.serial_logs[-25:])
             return data
 
     def subscribe(self):
@@ -491,13 +501,16 @@ class SerialManager:
                 self.telemetry["last_packet_time"] = now_str
                 self.telemetry["mode"] = "SIMULATION"
 
+                raw_line = f'{{"ax":{base_ax:.2f},"ay":{base_ay:.2f},"az":{base_az:.2f},"total":{total:.2f},"status":"{status}","buzzer":"{buzzer}"}}'
+                self.telemetry["raw"] = raw_line
+
                 if status == "ACCIDENT DETECTED" and self.last_status != "ACCIDENT DETECTED":
                     dispatch_info = notifier.dispatch_sms_notification(total, base_ax, base_ay, base_az)
                     self.telemetry["latest_notification"] = dispatch_info
                     database.log_accident(total, base_ax, base_ay, base_az, recipient=notifier.EMERGENCY_PHONE, sms_status="SENT")
-                    self._append_log(f"SIMULATION CRASH: {total:.2f} m/s² | Buzzer: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}", "alert")
-                elif step % 15 == 0:
-                    self._append_log(f"X:{base_ax:.2f} | Y:{base_ay:.2f} | Z:{base_az:.2f} | Total:{total:.2f} m/s² | Buzzer: OFF", "normal")
+                    self._append_log(f"🚨 CRITICAL COLLISION: {total:.2f} m/s² | Buzzer: ON | SMS DISPATCHED to {notifier.EMERGENCY_PHONE}", "alert")
+                else:
+                    self._append_log(raw_line, "raw")
 
                 self.last_status = status
 

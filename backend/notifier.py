@@ -93,3 +93,4 @@ def dispatch_sms_notification(peak_magnitude, ax=0.0, ay=0.0, az=9.81):
             dispatch_result["sms_gateway_error"] = str(e)
 
     return dispatch_result
+
