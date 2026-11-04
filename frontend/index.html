@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Accident Alert System | Live Telemetry Dashboard</title>
+  
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Dashboard Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Fullscreen Emergency Perimeter Red Pulsing Glow -->
+  <div id="emergencyPerimeter"></div>
+
+  <div class="cyber-container">
+
+    <!-- Emergency Warning Banner (Triggered upon Accident Detection) -->
+    <div id="emergencyBanner" class="emergency-banner">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <span style="font-size: 2rem;">🚨</span>
+        <div>
+          <div style="font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;">
+            CRITICAL: VEHICLE ACCIDENT DETECTED!
+          </div>
+          <div style="font-size: 0.85rem; color: #fecaca;">
+            High G-force impact recorded. Active buzzer sounding on Arduino Pin D8. Incident Coordinates: 23.203549, 72.583860
+          </div>
+        </div>
+      </div>
+      <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" style="background: #ef4444; color: #fff; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.8rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        🗺️ View on Google Maps
+      </a>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="cyber-header">
+      <div class="brand-section">
+        <svg class="brand-shield" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4zm0 2.18l7 3.12v4.7c0 4.54-3.14 8.78-7 9.9-3.86-1.12-7-5.36-7-9.9V7.3l7-3.12z"/>
+        </svg>
+        <div class="brand-name">CRASHALERT IoT</div>
+        <span class="brand-sub">ACCIDENT SHIELD</span>
+      </div>
+
+      <nav class="cyber-nav">
+        <a class="nav-tab active">Dashboard</a>
+        <a class="nav-tab">Accident Telemetry</a>
+        <a class="nav-tab">Impact Analysis</a>
+        <a class="nav-tab">Vehicle GPS</a>
+        <a class="nav-tab">Serial Diagnostics</a>
+      </nav>
+
+      <div class="header-right">
+        <!-- Notification Siren Toggle -->
+        <div id="soundToggleBell" class="notif-bell" title="Alarm Siren Active">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span class="notif-badge"></span>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" placeholder="Search...">
+        </div>
+
+        <!-- Operator Avatar -->
+        <div class="user-avatar" title="Vehicle Safety Operator">
+          <span>OP</span>
+          <span class="user-status-dot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top Grid: Overview | Waveform | G-Force Donut Meter -->
+    <section class="top-grid">
+
+      <!-- Card 1: Overview -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Accident Overview</span>
+        </div>
+        <div class="overview-list">
+          <!-- Active Accidents -->
+          <div class="overview-row" id="btnSimCrash" title="Click to test accident impact">
+            <div class="row-left">
+              <span class="row-icon-flame">💥</span>
+              <span>Active Accidents</span>
+            </div>
+            <div class="row-right">
+              <span id="txtActiveThreats" class="val-green">0</span>
+              <span class="chevron">&gt;</span>
+            </div>
+          </div>
+
+          <!-- Safe Driving Cycles -->
+          <div class="overview-row" id="btnSimReset" title="Click to reset to safe state">
+            <div class="row-left">
+              <span class="row-icon-check">✅</span>
+              <span>Safe Driving Cycles</span>
+            </div>
+            <div class="row-right">
+              <span class="val-green">128</span>
+              <span class="chevron">&gt;</span>
+            </div>
+          </div>
+
+          <!-- Impact G-Spikes -->
+          <div class="overview-row">
+            <div class="row-left">
+              <span class="row-icon-warn">⚡</span>
+              <span>Impact G-Spikes</span>
+            </div>
+            <div class="row-right">
+              <span class="val-amber">34</span>
+              <span class="chevron">&gt;</span>
+            </div>
+          </div>
+
+          <!-- Vehicle Status -->
+          <div class="overview-row">
+            <div class="row-left">
+              <span class="row-icon-shield">🛡️</span>
+              <span>Vehicle Status</span>
+            </div>
+            <div class="row-right">
+              <span id="systemStatusBadge" class="secure-pill">NORMAL (SAFE) &gt;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Threat Activity (Accelerometer Waveform) -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Accelerometer Waveform</span>
+          <div class="chart-dropdown-pill">
+            <span>Real-Time (10Hz)</span>
+            <span style="font-size: 8px;">▼</span>
+          </div>
+        </div>
+
+        <div class="chart-wrapper">
+          <canvas id="threatActivityCanvas"></canvas>
+        </div>
+
+        <div class="chart-legend">
+          <div><span class="legend-dot" style="background: #38bdf8;"></span>Total Magnitude</div>
+          <div><span class="legend-dot" style="background: #f97316;"></span>Lateral X</div>
+          <div><span class="legend-dot" style="background: #10b981;"></span>Longitudinal Y</div>
+          <div><span class="legend-dot" style="background: #818cf8;"></span>Vertical Z</div>
+        </div>
+      </div>
+
+      <!-- Card 3: Vulnerability Report (Crash Risk & G-Force Donut) -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">G-Force & Crash Risk</span>
+          <span class="card-gear">⚙️</span>
+        </div>
+
+        <div class="donut-gauge-box">
+          <!-- Circular Radial Donut Meter -->
+          <div class="donut-svg-wrapper">
+            <svg class="donut-svg" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="transparent" stroke="rgba(255,255,255,0.06)" stroke-width="12"></circle>
+              <circle id="donutCircle" cx="50" cy="50" r="40" fill="transparent" stroke="#10b981" stroke-width="12" stroke-dasharray="251.2" stroke-dashoffset="210" stroke-linecap="round" style="transition: all 0.3s ease;"></circle>
+            </svg>
+            <div class="donut-center-text">
+              <div id="donutPct" class="donut-pct">12%</div>
+              <div id="donutLabel" class="donut-label">Safe Driving</div>
+            </div>
+          </div>
+
+          <!-- Breakdown List -->
+          <div class="vuln-breakdown">
+            <div class="vuln-item">
+              <span style="color: #ef4444;">▲</span>
+              <strong>112</strong> Critical (&gt;17.5 m/s²)
+            </div>
+            <div class="vuln-item">
+              <span style="color: #f97316;">●</span>
+              <strong>87</strong> High Impact
+            </div>
+            <div class="vuln-item">
+              <span style="color: #10b981;">●</span>
+              <strong>152</strong> Normal Safe
+            </div>
+          </div>
+        </div>
+
+        <button id="btnScanNow" class="btn-scan-now">
+          Connect Arduino
+        </button>
+      </div>
+
+    </section>
+
+    <!-- Middle Grid: Recent Alerts | Network Traffic | Device Status -->
+    <section class="middle-grid">
+
+      <!-- Card 4: Recent Alerts -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Recent Accident Alerts</span>
+          <span style="color: var(--accent-cyan); font-weight: bold; cursor: pointer;">+</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column;">
+          <!-- Alert 1 -->
+          <div class="alert-item-box">
+            <div class="alert-item-top">
+              <span class="alert-item-title">
+                <span class="alert-tag-critical">▲</span> Vehicle Collision Detected
+              </span>
+              <span class="alert-tag-critical" style="font-size: 0.75rem; font-weight: 700;">Critical &gt;</span>
+            </div>
+            <div class="alert-item-bot">
+              <span>Severe 5 min ago</span>
+              <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="view-details-btn">View Details</a>
+            </div>
+          </div>
+
+          <!-- Alert 2 -->
+          <div class="alert-item-box">
+            <div class="alert-item-top">
+              <span class="alert-item-title">
+                <span class="alert-tag-high">⚠️</span> Rollover Inversion Warning
+              </span>
+              <span class="alert-tag-high" style="font-size: 0.75rem; font-weight: 700;">High &gt;</span>
+            </div>
+            <div class="alert-item-bot">
+              <span>Sensor 20 min ago</span>
+              <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="view-details-btn">View Details</a>
+            </div>
+          </div>
+
+          <!-- Alert 3 -->
+          <div class="alert-item-box" style="margin-bottom: 0;">
+            <div class="alert-item-top">
+              <span class="alert-item-title">
+                <span class="alert-tag-med">ℹ️</span> Sudden Deceleration Spike
+              </span>
+              <span class="alert-tag-med" style="font-size: 0.75rem; font-weight: 700;">Medium &gt;</span>
+            </div>
+            <div class="alert-item-bot">
+              <span>Impact 45 min ago</span>
+              <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" class="view-details-btn">View Details</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 5: Network Traffic (Fixed GPS Telemetry & Map) -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Fixed Location & GPS Telemetry</span>
+          <span style="color: var(--accent-cyan); font-size: 13px;">📶</span>
+        </div>
+
+        <div class="network-map-box">
+          <div class="map-svg-grid"></div>
+          
+          <!-- Radar Pulse upon Crash -->
+          <div id="mapRadar" class="map-radar-pulse" style="display: none;"></div>
+
+          <!-- Vehicle Pin -->
+          <div class="map-pin">
+            <div class="pin-icon">🚗</div>
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--accent-cyan); margin-top: 3px; background: rgba(0,0,0,0.7); padding: 1px 6px; border-radius: 4px;">
+              23.203549, 72.583860
+            </div>
+          </div>
+        </div>
+
+        <div class="network-stats-bar">
+          <div style="display: flex; align-items: center; gap: 0.4rem;">
+            <span>🎧</span>
+            <span>Data In: <strong class="net-stat-val">10 Hz</strong></span>
+            <span style="color: #10b981;">▲</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem;">
+            <span>🔔</span>
+            <span>Buzzer Pin D8: <strong class="net-stat-val">Active</strong></span>
+            <span style="color: #ef4444;">▼</span>
+          </div>
+          <a href="https://www.google.com/maps?q=23.203549,72.583860" target="_blank" style="color: var(--accent-cyan); text-decoration: none; font-weight: bold; font-size: 0.75rem;">
+            🗺️ Open Google Maps
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 6: Device Status -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Hardware Device Status</span>
+          <span class="card-gear">⚙️</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column;">
+          <!-- Arduino UNO -->
+          <div class="device-row">
+            <div class="device-left">
+              <span>🖥️</span>
+              <span>Arduino UNO</span>
+            </div>
+            <span id="arduinoStatusBadge" class="device-status-badge status-online">Online &gt;</span>
+          </div>
+
+          <!-- MPU6050 Accelerometer -->
+          <div class="device-row">
+            <div class="device-left">
+              <span>🧭</span>
+              <span>MPU6050 Sensor</span>
+            </div>
+            <span id="sensorStatusBadge" class="device-status-badge status-online">Active &gt;</span>
+          </div>
+
+          <!-- Active Buzzer Pin D8 -->
+          <div class="device-row" style="margin-bottom: 0;">
+            <div class="device-left">
+              <span>🔔</span>
+              <span>Active Buzzer (D8)</span>
+            </div>
+            <span id="buzzerStatusBadge" class="device-status-badge status-muted">OFF (Silent) &gt;</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Bottom Grid: Incident Summary (Bar) | User-Friendly Serial Monitor -->
+    <section class="bottom-grid">
+
+      <!-- Card 7: Incident Summary Bar Chart -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <span class="card-title">Incident Summary</span>
+          <div class="time-tabs">
+            <button class="time-tab-btn active">Weekly</button>
+            <button class="time-tab-btn">Monthly</button>
+            <button class="time-tab-btn">Yearly</button>
+          </div>
+        </div>
+
+        <div class="bar-chart-wrapper">
+          <canvas id="incidentBarCanvas"></canvas>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">
+          <div><span style="color: #2563eb;">■</span> Safe Driving Readings</div>
+          <div><span style="color: #ef4444;">■</span> Crash Acceleration Spikes</div>
+        </div>
+      </div>
+
+      <!-- Card 8: User-Friendly Serial Monitor -->
+      <div class="cyber-card">
+        <div class="card-top">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="card-title">Live Serial Monitor</span>
+            <span style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--accent-cyan); background: rgba(56, 189, 248, 0.15); padding: 1px 6px; border-radius: 4px;">
+              COM3 @ 9600 bps
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <button id="btnPauseSerialLogs" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.72rem;">
+              ⏸️ Pause
+            </button>
+            <button id="btnClearSerialLogs" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.72rem;">
+              🗑️ Clear
+            </button>
+          </div>
+        </div>
+
+        <div id="serialFeedContainer" class="serial-feed-container">
+          <div class="feed-item">
+            <div class="feed-left">
+              <span>👤</span>
+              <span>Serial Monitor Connected (COM3)</span>
+            </div>
+            <span class="feed-time">10:24 AM &gt;</span>
+          </div>
+
+          <div class="feed-item">
+            <div class="feed-left">
+              <span>⚡</span>
+              <span>MPU6050 Calibration Verified</span>
+            </div>
+            <span class="feed-time">09:50 AM &gt;</span>
+          </div>
+
+          <div class="feed-item">
+            <div class="feed-left">
+              <span>📄</span>
+              <span>Fixed GPS Telemetry: 23.203549, 72.583860</span>
+            </div>
+            <span class="feed-time">09:30 AM &gt;</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <!-- Port Scanner & Web Serial Connect Modal -->
+  <div id="cyberModal" class="cyber-modal-overlay">
+    <div class="cyber-modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Hardware Port Connection</h3>
+        <button id="closeCyberModal" style="background: transparent; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">&times;</button>
+      </div>
+
+      <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.25rem;">
+        Connect your Arduino UNO USB cable. You can use standard local COM port communication or direct browser Web Serial (fully functional on Vercel deployment).
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <button id="btnConnectWebSerial" class="btn-scan-now" style="background: linear-gradient(135deg, #0284c7, #2563eb);">
+          🔌 Connect Arduino (Web Serial - Chrome/Edge/Vercel)
+        </button>
+
+        <a href="http://localhost:5000" style="display: block; text-align: center; background: rgba(255,255,255,0.06); color: #fff; padding: 0.65rem; border-radius: 8px; text-decoration: none; font-size: 0.82rem; font-weight: 600;">
+          💻 Local Python PySerial Backend (COM3 @ 9600)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

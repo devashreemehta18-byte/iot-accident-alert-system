@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "name": "iot-accident-alert-system",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "outputDirectory": "frontend",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/$1"
+    }
+  ]
+}
