@@ -1,5 +1,7 @@
 # 🚗 CRASHGUARD IoT - Accident Alert & Telemetry System
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdevashreemehta18-byte%2Fiot-accident-alert-system)
+
 A modern, responsive, cyber-tactical IoT Accident Alert System dashboard for vehicle safety monitoring. Built with **Arduino UNO**, **MPU6050 (6-axis accelerometer & gyroscope)**, an **Active Buzzer on Digital Pin D8**, and an emergency notification dispatcher configured for **+91 9265843734** with fixed GPS coordinates (`23.203549, 72.583860`).
 
 Includes an official **Arduino IDE-style Serial Monitor** directly inside the dashboard with real-time bidirectional messaging, line-ending selector, baud rate dropdown, autoscroll, and timestamp controls.
